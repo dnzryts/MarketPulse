@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MarketPulse</title>
+<style>
+/*
+VOICE: a calm trading-desk instrument; numbers first, no decoration.
+IDEA: a control-room readout panel - steel strips, one dominant figure, alarm lights for signals.
+PICTURE: live price chart with scrub cursor in detail; sparklines and score meters in lists.
+COLOUR and TYPE: steel panel, black, white, alarm red for falls, signal green for gains; system sans, tabular figures.
+LAYOUT: single-column phone app, sticky header, bottom tab bar, long thin rows.
+*/
+:root{color-scheme:light dark;
+--bg:light-dark(#d5dbe0,#16191c);--panel:light-dark(#eef1f3,#1f2327);--line:light-dark(#bcc4cb,#2c3237);
+--ink:light-dark(#0b0d0e,#f3f5f6);--mute:light-dark(#4d5760,#9aa4ac);--up:light-dark(#08823f,#2fd17a);
+--down:light-dark(#d01c12,#ff4a3d);--accent:#e8251a;--chip:light-dark(#ffffff,#2a2f34);--hot:light-dark(#b3200f,#ff6a4d)}
+:root[data-theme=light]{color-scheme:light}:root[data-theme=dark]{color-scheme:dark}
+*{box-sizing:border-box;min-width:0;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.45 system-ui,-apple-system,"Roboto","Segoe UI",sans-serif;font-variant-numeric:tabular-nums;overflow-x:clip}
+button,input,textarea,select{font:inherit;color:inherit}
+button{background:none;border:0;cursor:pointer}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+header{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:8px;padding:calc(env(safe-area-inset-top) + 10px) 16px 10px;background:var(--bg);border-bottom:1px solid var(--line)}
+header h1{font-size:20px;margin:0;font-weight:800;letter-spacing:-.01em;flex:1;display:flex;align-items:center;gap:8px;white-space:nowrap}
+header h1 i{width:10px;height:10px;border-radius:50%;background:var(--accent);display:inline-block}
+.upd{font-size:13px;color:var(--mute);white-space:nowrap}
+@media(max-width:360px){.upd{display:none}}
+.ib{width:44px;height:44px;border-radius:12px;display:grid;place-items:center;background:var(--chip);flex:none}
+.ib svg{width:22px;height:22px}
+.spin svg{animation:sp 1s linear infinite}@keyframes sp{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.spin svg{animation:none}}
+main{padding:12px 16px calc(84px + env(safe-area-inset-bottom));max-width:760px;margin:0 auto}
+.view{display:none}.view.on{display:block}
+nav{position:fixed;left:0;right:0;bottom:0;z-index:5;display:grid;grid-template-columns:repeat(4,1fr);background:var(--panel);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+nav button{height:60px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;font-size:12.5px;color:var(--mute)}
+nav button svg{width:22px;height:22px}
+nav button.on{color:var(--ink);font-weight:700}
+.search{position:relative;margin-bottom:12px}
+.search input{width:100%;height:48px;border-radius:12px;border:1px solid var(--line);background:var(--panel);padding:0 14px 0 42px;font-size:16px}
+.search>svg{position:absolute;left:13px;top:14px;width:20px;height:20px;color:var(--mute)}
+.sugg{position:absolute;left:0;right:0;top:52px;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden;z-index:4;box-shadow:0 8px 24px rgba(0,0,0,.25)}
+.sugg button{display:flex;width:100%;text-align:left;padding:12px 14px;gap:10px;border-bottom:1px solid var(--line);align-items:baseline}
+.sugg button:last-child{border-bottom:0}
+.sugg b{min-width:76px}.sugg span{color:var(--mute);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.sugg em{font-style:normal;font-size:13px;color:var(--mute)}
+.bar{display:flex;align-items:center;justify-content:space-between;margin:4px 0 8px;gap:8px}
+.bar h2{font-size:15px;margin:0;color:var(--mute);font-weight:600}
+.txtbtn{min-height:44px;padding:0 6px;color:var(--accent);font-weight:700;font-size:15px}
+.list{background:var(--panel);border-radius:14px;overflow:hidden;border:1px solid var(--line)}
+.row{display:grid;grid-template-columns:minmax(0,1fr) 72px auto;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);width:100%;text-align:left;min-height:64px}
+.row:last-child{border-bottom:0}
+.sym{font-weight:800;font-size:16px}
+.nm{font-size:13px;color:var(--mute);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.px{text-align:right;font-weight:700;white-space:nowrap}
+.pill{display:inline-block;margin-top:3px;min-width:74px;text-align:center;border-radius:7px;padding:2px 6px;font-size:13px;font-weight:700;color:#fff;background:var(--mute)}
+.pill.up{background:var(--up)}.pill.down{background:var(--down)}
+.up-t{color:var(--up)}.down-t{color:var(--down)}
+.spark{width:72px;height:32px}
+.del{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--down);font-size:22px;font-weight:700}
+.empty,.err{padding:22px 16px;text-align:center;color:var(--mute);font-size:15px}
+.err{color:var(--down)}
+.skel{height:14px;border-radius:6px;background:var(--line);opacity:.6}
+.btn{min-height:48px;padding:0 18px;border-radius:12px;background:var(--ink);color:var(--bg);font-weight:800;font-size:15px}
+.btn.alt{background:var(--chip);color:var(--ink);border:1px solid var(--line)}
+.btn[disabled]{opacity:.5}
+/* detail */
+.back{display:flex;align-items:center;gap:4px;min-height:44px;color:var(--mute);font-weight:600;padding:0}
+.back svg{width:20px;height:20px}
+.dhead{margin:4px 0 6px}
+.dhead .t{font-size:14px;color:var(--mute)}
+.dhead h2{font-size:24px;margin:2px 0 6px;line-height:1.1}
+.big{font-size:clamp(34px,10vw,48px);font-weight:800;line-height:1.05;letter-spacing:-.02em}
+.chg{font-size:17px;font-weight:700;margin-top:4px}
+.state{font-size:13px;color:var(--mute);margin-top:2px}
+.ranges,.seg{display:flex;gap:6px;margin:14px 0 8px;overflow-x:auto}
+.ranges button,.seg button{flex:1 0 auto;min-width:46px;height:40px;border-radius:10px;background:var(--chip);font-weight:700;font-size:14px;color:var(--mute)}
+.ranges button.on,.seg button.on{background:var(--ink);color:var(--bg)}
+.fig{position:relative;height:240px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;touch-action:pan-y}
+.fig svg{position:absolute;inset:0;width:100%;height:100%}
+.readout{position:absolute;left:12px;top:10px;font-size:13px;color:var(--mute);background:var(--panel);padding:2px 6px;border-radius:6px;pointer-events:none}
+.readout b{color:var(--ink)}
+.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin:12px 0;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.stats div{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:8px;font-size:14px}
+.stats div:nth-child(odd){border-right:1px solid var(--line)}
+.stats span{color:var(--mute)}.stats b{white-space:nowrap}
+/* signals */
+.sig{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin:12px 0}
+.sig-top{display:flex;align-items:center;gap:14px}
+.gauge{width:64px;height:64px;flex:none;position:relative}
+.gauge svg{width:64px;height:64px;transform:rotate(-90deg)}
+.gauge b{position:absolute;inset:0;display:grid;place-items:center;font-size:20px;font-weight:800}
+.sig h3{margin:0;font-size:17px}
+.sig p{margin:2px 0 0;font-size:13.5px;color:var(--mute)}
+.tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.tag{font-size:12.5px;font-weight:700;padding:3px 8px;border-radius:6px;background:var(--chip);border:1px solid var(--line);white-space:nowrap}
+.tag.hot{background:var(--hot);color:#fff;border-color:transparent}
+.tag.good{background:var(--up);color:#fff;border-color:transparent}
+.tag.bad{background:var(--down);color:#fff;border-color:transparent}
+/* radar */
+.rrow{display:grid;grid-template-columns:48px minmax(0,1fr) auto;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);width:100%;text-align:left}
+.rrow:last-child{border-bottom:0}
+.score{width:48px;height:48px;border-radius:12px;display:grid;place-items:center;font-weight:800;font-size:18px;background:var(--chip);border:1px solid var(--line)}
+.score.s3{background:var(--hot);color:#fff;border-color:transparent}
+.score.s2{background:var(--ink);color:var(--bg);border-color:transparent}
+.rrow .tags{margin-top:5px}
+.prog{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin:4px 0 12px}
+.prog i{display:block;height:100%;background:var(--accent);width:0;transition:width .2s}
+.ctrl{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.ctrl .btn{flex:1}
+/* news */
+.chips{display:flex;gap:8px;overflow-x:auto;padding-bottom:10px;scrollbar-width:none}
+.chips button{flex:none;height:40px;padding:0 14px;border-radius:20px;background:var(--chip);font-size:14px;font-weight:600;border:1px solid var(--line)}
+.chips button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+.news a{display:block;padding:13px 14px;border-bottom:1px solid var(--line);color:inherit;text-decoration:none}
+.news a:last-child{border-bottom:0}
+.news .h{font-weight:650;font-size:15.5px;line-height:1.35}
+.news .m{font-size:13px;color:var(--mute);margin-top:4px;display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--mute)}
+.dot.pos{background:var(--up)}.dot.neg{background:var(--down)}
+.mentions{display:flex;gap:8px;overflow-x:auto;padding-bottom:10px}
+.mentions button{flex:none;display:flex;flex-direction:column;align-items:flex-start;padding:8px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line);min-width:96px;text-align:left}
+.mentions b{font-size:14px}.mentions span{font-size:12px;color:var(--mute)}
+.note{font-size:13px;color:var(--mute);margin:14px 2px;line-height:1.5}
+/* analyst */
+.chat{display:flex;flex-direction:column;gap:12px;margin-bottom:12px}
+.msg{padding:12px 14px;border-radius:14px;max-width:100%;overflow-wrap:anywhere}
+.msg.user{align-self:flex-end;background:var(--ink);color:var(--bg);max-width:88%;white-space:pre-wrap}
+.msg.ai{background:var(--panel);border:1px solid var(--line)}
+.msg.ai h1,.msg.ai h2,.msg.ai h3{font-size:16.5px;margin:12px 0 4px}
+.msg.ai p{margin:6px 0}.msg.ai ul,.msg.ai ol{margin:6px 0;padding-left:20px}
+.msg.ai table{border-collapse:collapse;font-size:13px;margin:8px 0;display:block;overflow-x:auto}
+.msg.ai td,.msg.ai th{border:1px solid var(--line);padding:4px 6px;text-align:left;white-space:nowrap}
+.msg.ai a{color:var(--accent)}
+.steps{font-size:13px;color:var(--mute);display:flex;flex-direction:column;gap:2px}
+.steps div::before{content:"› ";color:var(--accent);font-weight:800}
+.quick{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px}
+.quick button{min-height:40px;padding:8px 12px;border-radius:12px;background:var(--panel);border:1px solid var(--line);font-size:14px;text-align:left}
+.composer{position:sticky;bottom:calc(68px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:flex-end;background:var(--bg);padding:8px 0}
+.composer textarea{flex:1;min-height:48px;max-height:140px;resize:none;border-radius:12px;border:1px solid var(--line);background:var(--panel);padding:12px 14px;font-size:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+.card h3{margin:0 0 6px;font-size:17px}.card p{margin:0 0 12px;color:var(--mute);font-size:14.5px}
+/* settings sheet */
+.sheet{position:fixed;inset:0;z-index:20;background:rgba(0,0,0,.5);display:flex;align-items:flex-end}
+.sheet[hidden]{display:none}
+.sheet>div{background:var(--bg);width:100%;max-width:760px;margin:0 auto;border-radius:18px 18px 0 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));max-height:90vh;overflow:auto}
+.sheet h2{margin:0 0 12px;font-size:20px}
+.field{display:block;margin-bottom:14px}
+.field span{display:block;font-size:14px;font-weight:700;margin-bottom:6px}
+.field input,.field select{width:100%;height:48px;border-radius:12px;border:1px solid var(--line);background:var(--panel);padding:0 12px;font-size:16px}
+.field small{display:block;color:var(--mute);font-size:13px;margin-top:6px}
+.chk{display:flex;align-items:center;gap:10px;min-height:44px;margin-bottom:10px;font-size:15px}
+.chk input{width:22px;height:22px}
+/* header extras */
+.badge{position:absolute;top:4px;right:4px;min-width:18px;height:18px;border-radius:9px;background:var(--accent);color:#fff;font-size:11px;font-weight:800;display:grid;place-items:center;padding:0 4px}
+.ib{position:relative}.badge[hidden]{display:none}
+.sig .stats div{flex-direction:column;gap:0}.sig .stats b{white-space:normal}
+.ctrl .btn.alt{font-size:14px;padding:0 10px}
+.avatar{width:44px;height:44px;border-radius:50%;background:var(--ink);color:var(--bg);font-weight:800;font-size:16px;display:grid;place-items:center;flex:none}
+@media(max-width:420px){header .upd{display:none}}
+nav{grid-template-columns:repeat(5,1fr)}
+/* motion */
+.view.on{animation:vin .24s ease-out}
+@keyframes vin{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:none}}
+.stagger>*{animation:vin .3s ease-out both}
+.stagger>*:nth-child(2){animation-delay:.03s}.stagger>*:nth-child(3){animation-delay:.06s}.stagger>*:nth-child(4){animation-delay:.09s}.stagger>*:nth-child(5){animation-delay:.12s}.stagger>*:nth-child(n+6){animation-delay:.15s}
+.gauge circle+circle{transition:stroke-dasharray .8s cubic-bezier(.2,.8,.2,1)}
+button:active{transform:scale(.98)}
+@media(prefers-reduced-motion:reduce){.view.on,.stagger>*,.wcard,.toast{animation:none!important;transition:none!important}button:active{transform:none}}
+/* home */
+.hello h2{margin:4px 0 0;font-size:26px;line-height:1.1}.hello p{margin:4px 0 12px;color:var(--mute);font-size:14px}
+.wallet{display:flex;gap:12px;overflow-x:auto;scroll-snap-type:x mandatory;padding:4px 4px 18px;margin:0 -2px;scrollbar-width:none}
+.wallet::-webkit-scrollbar{display:none}
+.wcard{flex:0 0 86%;max-width:420px;scroll-snap-align:center;border-radius:20px;padding:18px;color:#fff;min-height:190px;position:relative;overflow:hidden;text-align:left;display:flex;flex-direction:column;box-shadow:0 6px 14px rgba(0,0,0,.18)}
+.wcard::after{content:"";position:absolute;right:-40px;top:-60px;width:200px;height:200px;border-radius:50%;background:rgba(255,255,255,.08)}
+.wcard.sgx{background:linear-gradient(135deg,#c8102e,#5e0716)}
+.wcard.nasdaq{background:linear-gradient(135deg,#1d2733,#0a0d10)}
+.wcard.nse{background:linear-gradient(135deg,#0b6e4f,#06331f)}
+.wcard.mine{background:linear-gradient(135deg,#3b4550,#1c2227)}
+.wcard .wt{font-size:13px;opacity:.85;font-weight:700;letter-spacing:.02em;display:flex;justify-content:space-between}
+.wcard .wv{font-size:32px;font-weight:800;margin-top:8px;line-height:1.05}
+.wcard .wc{font-size:15px;font-weight:700;margin-top:2px}
+.wcard svg.ws{width:100%;height:46px;margin-top:auto}
+.wcard .wf{font-size:13px;opacity:.9;display:flex;justify-content:space-between;gap:8px;margin-top:6px}
+.dots{display:flex;justify-content:center;gap:6px;margin-bottom:12px}
+.dots i{width:7px;height:7px;border-radius:4px;background:var(--line);transition:width .2s}.dots i.on{width:18px;background:var(--ink)}
+.mood{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.mood .mb{height:10px;border-radius:5px;background:linear-gradient(90deg,var(--down),var(--mute),var(--up));position:relative;margin:10px 0 6px}
+.mood .mb i{position:absolute;top:-4px;width:4px;height:18px;border-radius:2px;background:var(--ink);transition:left .6s}
+.mood .ml{display:flex;justify-content:space-between;font-size:12px;color:var(--mute)}
+.mood b{font-size:17px}
+.hscroll{display:flex;gap:10px;overflow-x:auto;padding-bottom:8px;margin-bottom:8px;scrollbar-width:none}
+.mini{flex:none;min-width:124px;background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:10px 12px;text-align:left}
+.mini b{display:block;font-size:15px}.mini span{font-size:13px;color:var(--mute)}.mini em{font-style:normal;font-weight:800;font-size:14px}
+.sec{margin:16px 0 8px;display:flex;justify-content:space-between;align-items:center}
+.sec h2{margin:0;font-size:17px}
+/* segmented subnav in Markets */
+.subnav{display:grid;grid-template-columns:repeat(3,1fr);background:var(--chip);border:1px solid var(--line);border-radius:12px;padding:3px;margin-bottom:12px}
+.subnav button{height:40px;border-radius:9px;font-weight:700;font-size:14px;color:var(--mute)}
+.subnav button.on{background:var(--ink);color:var(--bg)}
+.sub{display:none}.sub.on{display:block}
+.tgt{height:6px;border-radius:3px;background:var(--line);overflow:hidden;margin-top:6px}.tgt i{display:block;height:100%;background:var(--up)}
+/* swipe to delete */
+.sw{position:relative;overflow:hidden;border-bottom:1px solid var(--line)}.sw:last-child{border-bottom:0}
+.sw>.row,.sw>.rrow,.sw>.al{border-bottom:0;background:var(--panel);position:relative;transition:transform .2s;touch-action:pan-y}
+.sw.drag>.row,.sw.drag>.rrow,.sw.drag>.al{transition:none}
+.sw-bg{position:absolute;inset:0;background:var(--down);color:#fff;font-weight:800;display:flex;align-items:center;justify-content:flex-end;padding-right:20px}
+/* alerts */
+.al{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:center;padding:12px 14px;background:var(--panel)}
+.al .nm{white-space:normal}
+.switch{position:relative;width:52px;height:32px;flex:none}
+.switch input{opacity:0;position:absolute;inset:0;margin:0;cursor:pointer;z-index:1}
+.switch i{position:absolute;inset:0;border-radius:16px;background:var(--line);transition:background .2s}
+.switch i::after{content:"";position:absolute;left:3px;top:3px;width:26px;height:26px;border-radius:50%;background:#fff;transition:transform .2s;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.switch input:checked+i{background:var(--up)}.switch input:checked+i::after{transform:translateX(20px)}
+.inbox div{padding:12px 14px;border-bottom:1px solid var(--line)}.inbox div:last-child{border-bottom:0}
+.inbox b{display:block;font-size:15px}.inbox span{font-size:13px;color:var(--mute)}
+/* profile */
+.prof{display:flex;align-items:center;gap:14px;margin:6px 0 16px}
+.prof .avatar{width:64px;height:64px;font-size:24px}
+.prof h2{margin:0;font-size:22px}.prof p{margin:2px 0 0;color:var(--mute);font-size:14px}
+.group{background:var(--panel);border:1px solid var(--line);border-radius:14px;margin-bottom:16px;overflow:hidden}
+.group h3{margin:0;padding:12px 14px 4px;font-size:13px;color:var(--mute);font-weight:700}
+.item{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 14px;min-height:56px;border-top:1px solid var(--line)}
+.group h3+.item{border-top:0}
+.item>span{font-size:15px}.item small{display:block;color:var(--mute);font-size:12.5px}
+.item input[type=text],.item input[type=password],.item select{height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);padding:0 10px;font-size:16px;max-width:60%}
+.seg.small{margin:0}.seg.small button{height:36px;min-width:0;padding:0 10px;font-size:13px}
+.mk{display:flex;gap:6px}.mk label{display:flex;align-items:center;gap:4px;font-size:14px;min-height:44px}
+/* toast */
+.toast{position:fixed;left:16px;right:16px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:30;background:var(--ink);color:var(--bg);border-radius:12px;padding:10px 10px 10px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;max-width:520px;margin:0 auto;animation:vin .2s ease-out;font-size:15px}
+.toast[hidden]{display:none}
+.toast button{color:var(--accent);font-weight:800;min-height:40px;padding:0 10px;filter:brightness(1.3)}
+</style>
+</head>
+<body>
+<header>
+  <h1><i></i>MarketPulse</h1>
+  <span class="upd" id="upd"></span>
+  <button class="ib" id="refresh" aria-label="Refresh"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/></svg></button>
+  <button class="ib" id="bell" aria-label="Alerts"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></svg><span class="badge" id="badge" hidden></span></button>
+  <button class="avatar" id="me" aria-label="Profile">?</button>
+</header>
+
+<main>
+  <section class="view on" id="v-home">
+    <div class="hello"><h2 id="hello">Good day</h2><p id="today"></p></div>
+    <div class="wallet" id="wallet"></div>
+    <div class="dots" id="wdots"></div>
+    <div class="mood" id="mood"></div>
+    <div class="sec"><h2>Watchlist movers</h2><button class="txtbtn" data-go="markets">See all</button></div>
+    <div class="hscroll" id="movers"></div>
+    <div class="sec"><h2>Breakout picks</h2><button class="txtbtn" data-go="radar">Radar</button></div>
+    <div class="list stagger" id="picks"></div>
+    <div class="sec"><h2>Wishlist near target</h2><button class="txtbtn" data-sub="wish">Wishlist</button></div>
+    <div class="list" id="nearwish"></div>
+    <div class="sec"><h2>Recent alerts</h2><button class="txtbtn" data-go="alerts">All alerts</button></div>
+    <div class="list inbox" id="recent"></div>
+    <div class="ctrl" style="margin-top:14px"><button class="btn" id="brief">AI morning brief</button></div>
+  </section>
+
+  <section class="view" id="v-markets">
+    <div class="subnav" id="subnav"><button class="on" data-s="watch">Watchlist</button><button data-s="wish">Wishlist</button><button data-s="done">Analysed</button></div>
+    <div class="sub on" id="sub-watch">
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="q" type="search" placeholder="Add a symbol: AMZN, D05.SI…" autocomplete="off" autocapitalize="characters">
+      <div class="sugg" id="sugg" hidden></div>
+    </div>
+    <div class="bar"><h2>Watchlist</h2><button class="txtbtn" id="edit">Edit</button></div>
+    <div class="list" id="watch"></div>
+    <p class="note">Swipe a row left to remove it. Quotes from Yahoo Finance; some exchanges are delayed 15–20 minutes. Not investment advice.</p>
+    </div>
+    <div class="sub" id="sub-wish">
+      <div class="bar"><h2>Stocks you want to buy</h2><button class="txtbtn" id="wish-add">+ Add</button></div>
+      <div class="list" id="wish"></div>
+      <p class="note">Each wishlist stock gets a buy-target alert: you'll be notified when the price falls to your target. Swipe left to remove.</p>
+    </div>
+    <div class="sub" id="sub-done">
+      <div class="bar"><h2>Recently analysed</h2><button class="txtbtn" id="done-clear">Clear</button></div>
+      <div class="list" id="done"></div>
+      <p class="note">Every stock you open or the AI analyst studies is logged here with its breakout score at the time, so you can see how setups change.</p>
+    </div>
+  </section>
+
+  <section class="view" id="v-detail">
+    <button class="back" id="back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg><span id="backlbl">Back</span></button>
+    <div class="dhead">
+      <div class="t" id="d-sym"></div>
+      <h2 id="d-name"></h2>
+      <div class="big" id="d-price">–</div>
+      <div class="chg" id="d-chg"></div>
+      <div class="state" id="d-state"></div>
+    </div>
+    <div class="ranges" id="ranges"></div>
+    <div class="fig" id="fig"><svg id="chart"></svg><div class="readout" id="readout" hidden></div></div>
+    <div class="sig" id="signals"><div class="empty">Reading signals…</div></div>
+    <div class="ctrl"><button class="btn" id="d-ask">Ask the AI analyst</button></div>
+    <div class="ctrl"><button class="btn alt" id="d-watch">+ Watchlist</button><button class="btn alt" id="d-wish">+ Wishlist</button><button class="btn alt" id="d-alert">Set alert</button></div>
+    <div class="stats" id="stats"></div>
+    <div class="bar"><h2>Latest news</h2></div>
+    <div class="list news" id="d-news"></div>
+  </section>
+
+  <section class="view" id="v-radar">
+    <div class="seg" id="mkts"></div>
+    <div class="ctrl"><button class="btn" id="scan">Scan now</button><button class="btn alt" id="radar-ai">AI review</button></div>
+    <div class="prog" id="prog" hidden><i></i></div>
+    <div class="bar"><h2 id="radar-h">Breakout radar</h2><span class="upd" id="radar-t"></span></div>
+    <div class="chips" id="rfilt"></div>
+    <div class="list" id="radar"></div>
+    <p class="note"><b>How the score works (0–100):</b> price at or near its 20-day high, today's volume against its 20-day average, trend (price above the 20- and 50-day averages), one-month momentum and RSI, then news buzz and headline tone over the past two days for the leaders. A high score means momentum and attention are lining up. It is not a forecast: breakouts often fail, so check the chart and news before acting. Not investment advice.</p>
+  </section>
+
+  <section class="view" id="v-news">
+    <div class="search">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      <input id="nq" type="search" placeholder="Search news: Fed, DBS, Reliance…" autocomplete="off">
+    </div>
+    <div class="chips" id="topics"></div>
+    <div class="bar"><h2>Stocks in these headlines</h2></div>
+    <div class="mentions" id="mentions"></div>
+    <div class="list news" id="newslist"></div>
+    <p class="note">Headlines from Google News. Green and red dots show headline tone, read from keywords like "beats", "upgrade", "plunges" or "probe": a rough guide only. Tap a story to open it in your browser.</p>
+  </section>
+
+  <section class="view" id="v-analyst">
+    <div id="keycard" class="card" hidden>
+      <h3>Connect the AI analyst</h3>
+      <p>The analyst uses Claude to research markets: it scans SGX, NASDAQ and NSE with the app's live data, reads the news, searches the web, and explains what it finds. Add your Anthropic API key to turn it on. Usage is billed to your Anthropic account.</p>
+      <button class="btn" id="keybtn">Add API key</button>
+    </div>
+    <div class="quick" id="quick"></div>
+    <div class="chat" id="chat"></div>
+    <div class="composer">
+      <textarea id="ask" rows="1" placeholder="Ask the analyst…"></textarea>
+      <button class="ib" id="send" aria-label="Send" style="width:48px;height:48px;background:var(--accent);color:#fff"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg></button>
+    </div>
+  </section>
+  <section class="view" id="v-alerts">
+    <div class="bar"><h2>Price alerts</h2><button class="txtbtn" id="al-add">+ New alert</button></div>
+    <div id="notif-warn"></div>
+    <div class="list" id="alerts"></div>
+    <p class="note">Checked about every 15 minutes in the background, even when the app is closed (Android sets the timing). Price alerts switch off after they fire; daily-move alerts fire at most once a day.</p>
+    <div class="bar"><h2>Notifications</h2><button class="txtbtn" id="inbox-clear">Clear</button></div>
+    <div class="list inbox" id="inbox"></div>
+  </section>
+
+  <section class="view" id="v-profile">
+    <div class="prof"><div class="avatar" id="p-av">?</div><div><h2 id="p-name">Investor</h2><p id="p-sub">SGX · NASDAQ · NSE</p></div></div>
+    <div class="group"><h3>Profile</h3>
+      <div class="item"><span>Name</span><input type="text" id="s-name" placeholder="Your name" autocomplete="name"></div>
+      <div class="item"><span>Focus markets</span><div class="mk" id="s-mk"></div></div>
+    </div>
+    <div class="group"><h3>Appearance</h3>
+      <div class="item"><span>Theme</span><div class="seg small" id="s-theme"><button data-v="system">System</button><button data-v="light">Light</button><button data-v="dark">Dark</button></div></div>
+    </div>
+    <div class="group"><h3>Security</h3>
+      <div class="item"><span>Fingerprint lock<small id="lock-note">Asks for your fingerprint or screen lock when you open the app.</small></span><label class="switch"><input type="checkbox" id="s-lock"><i></i></label></div>
+    </div>
+    <div class="group"><h3>Notifications</h3>
+      <div class="item"><span>Alert notifications<small id="notif-note">Price targets, big moves and wishlist buy levels.</small></span><label class="switch"><input type="checkbox" id="s-notif"><i></i></label></div>
+      <div class="item"><span>Breakout alerts<small>Notify when a watchlist or wishlist stock scores 70+ on the radar (checked while the app is open).</small></span><label class="switch"><input type="checkbox" id="s-brk"><i></i></label></div>
+    </div>
+    <div class="group"><h3>AI analyst</h3>
+      <div class="item"><span>API key<small><a href="https://console.anthropic.com/settings/keys" data-link="https://console.anthropic.com/settings/keys" style="color:var(--accent)">Get an Anthropic API key</a></small></span><input type="password" id="s-key" placeholder="sk-ant-…" autocomplete="off"></div>
+      <div class="item"><span>Model</span><select id="s-model">
+        <option value="claude-sonnet-5-5">Sonnet 5.5 (balanced)</option>
+        <option value="claude-opus-5-5">Opus 5.5 (deepest)</option>
+        <option value="claude-haiku-5-5">Haiku 5.5 (fastest)</option></select></div>
+      <div class="item"><span>Web search<small>Lets the analyst search the web for catalysts.</small></span><label class="switch"><input type="checkbox" id="s-web"><i></i></label></div>
+      <div class="item"><span>Conversation</span><button class="txtbtn" id="s-clear">Clear chat</button></div>
+    </div>
+    <div class="group"><h3>Data</h3>
+      <div class="item"><span>Watchlist</span><button class="txtbtn" id="s-reset">Reset to default</button></div>
+      <div class="item"><span>Analysed history</span><button class="txtbtn" id="s-hist">Clear</button></div>
+    </div>
+    <p class="note">Your key, lists and settings stay on this phone. Quotes: Yahoo Finance. News: Google News. AI: Anthropic Claude. Research only, not financial advice.</p>
+  </section>
+</main>
+
+<nav>
+  <button class="on" data-tab="home"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-7 9 7"/><path d="M5 10v10h14V10"/></svg>Home</button>
+  <button data-tab="markets"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l5-5 4 4 8-8"/><path d="M15 8h5v5"/></svg>Markets</button>
+  <button data-tab="radar"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 12l6-6"/></svg>Radar</button>
+  <button data-tab="news"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9h10M7 13h10M7 17h6"/></svg>News</button>
+  <button data-tab="analyst"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/><path d="M9 11h.01M12 11h.01M15 11h.01"/></svg>Analyst</button>
+</nav>
+
+<div class="sheet" id="modal" hidden>
+  <div role="dialog" aria-modal="true" aria-labelledby="m-title">
+    <h2 id="m-title"></h2>
+    <form id="m-form"><div id="m-body"></div>
+    <div class="ctrl"><button class="btn" type="submit" id="m-ok">Save</button><button class="btn alt" type="button" id="m-cancel">Cancel</button></div></form>
+  </div>
+</div>
+<div class="toast" id="toast" hidden><span id="toast-t"></span><button id="toast-b">Undo</button></div>
+
+<script src="universe.js"></script>
+<script src="app.js"></script>
+<script src="radar.js"></script>
+<script src="agent.js"></script>
+<script src="features.js"></script>
+</body>
+</html>
