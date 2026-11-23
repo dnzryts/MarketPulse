@@ -2,6 +2,15 @@
 
 An Android app (Android 8.0+) that tracks, scans and explains the market. It shows which stocks are breaking out, which are in the news, and what an AI analyst makes of them.
 
+## New in v3
+- **Candlestick charts** with volume bars and 20/50-day moving averages (Line/Candles toggle on any stock page).
+- **Sector heatmap** on Radar and **relative strength vs the index** (STI, Nasdaq, Nifty 50) built into the breakout score.
+- **Portfolio**: record buys and sells; holdings, today's change, unrealised and realised P&L, allocation by market and sector, totals in SGD, USD or INR at live FX rates.
+- **Results & dividends calendar** for your stocks (News tab), next dates and valuation (yield, P/E) on each stock page, and upcoming events on Home.
+- **AI news sentiment**: Claude reads the headlines and explains the likely impact on each stock.
+- **Home-screen widget** showing your first five watchlist stocks, refreshed about every 15 minutes.
+- Every build is now signed with one permanent key (in `signing/`), so updates install over the previous version.
+
 ## Features
 - **Home dashboard:** sliding wallet cards for the STI, Nasdaq and Nifty 50, each showing the top breakout pick for that market. Also market mood (breadth), watchlist movers, breakout picks, wishlist stocks near target, recent alerts and a one-tap **AI morning brief**.
 - **Markets**

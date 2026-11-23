@@ -36,7 +36,11 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.CookieHandler;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
 import java.net.HttpURLConnection;
+import java.net.URLEncoder;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.Iterator;
@@ -70,6 +74,7 @@ public class MainActivity extends Activity {
     private final Handler main = new Handler(Looper.getMainLooper());
 
     private boolean authInProgress = false, pageReady = false, pendingOpenAlerts = false;
+    private volatile String yahooCrumb = null;
     private long backgroundAt = 0;
     private Runnable authOk, authFail;
 
@@ -78,6 +83,7 @@ public class MainActivity extends Activity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         prefs = getSharedPreferences(AlertJobService.PREFS, MODE_PRIVATE);
+        if (CookieHandler.getDefault() == null) CookieHandler.setDefault(new CookieManager(null, CookiePolicy.ACCEPT_ALL));
         AlertJobService.ensureChannel(this);
         setBars(true);
 
@@ -373,6 +379,57 @@ public class MainActivity extends Activity {
         }
     }
 
+    /* ---------- Yahoo quoteSummary (earnings dates, dividends, valuation) ---------- */
+
+    private String plainGet(String url) throws Exception {
+        HttpURLConnection c = (HttpURLConnection) new URL(url).openConnection();
+        try {
+            c.setConnectTimeout(10000);
+            c.setReadTimeout(15000);
+            c.setRequestProperty("User-Agent", "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Mobile Safari/537.36");
+            int code = c.getResponseCode();
+            InputStream in = code < 400 ? c.getInputStream() : c.getErrorStream();
+            if (in == null) return "";
+            ByteArrayOutputStream out = new ByteArrayOutputStream();
+            byte[] buf = new byte[8192];
+            int n;
+            while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+            in.close();
+            if (code >= 400) throw new Exception("HTTP " + code);
+            return out.toString("UTF-8");
+        } finally {
+            c.disconnect();
+        }
+    }
+
+    private synchronized String crumb(boolean fresh) throws Exception {
+        if (yahooCrumb != null && !fresh) return yahooCrumb;
+        try { plainGet("https://fc.yahoo.com"); } catch (Exception ignored) { } // sets the session cookie; a 404 is normal
+        String c = plainGet("https://query1.finance.yahoo.com/v1/test/getcrumb").trim();
+        if (c.isEmpty() || c.contains("<")) throw new Exception("No crumb");
+        yahooCrumb = c;
+        return c;
+    }
+
+    private void quoteSummary(String id, String sym, String modules) {
+        try {
+            String mods = modules.replaceAll("[^A-Za-z,]", "");
+            for (int attempt = 0; attempt < 2; attempt++) {
+                String cr = crumb(attempt > 0);
+                try {
+                    String body = plainGet("https://query2.finance.yahoo.com/v10/finance/quoteSummary/"
+                            + URLEncoder.encode(sym, "UTF-8") + "?modules=" + mods + "&crumb=" + URLEncoder.encode(cr, "UTF-8"));
+                    deliver(id, true, 200, body);
+                    return;
+                } catch (Exception e) {
+                    if (attempt > 0) throw e;
+                }
+            }
+        } catch (Exception e) {
+            deliver(id, false, 0, String.valueOf(e.getMessage()));
+        }
+    }
+
     /* ---------- bridge ---------- */
 
     private class Bridge {
@@ -384,6 +441,17 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void request(final String id, final String method, final String url, final String headersJson, final String body) {
             pool.execute(() -> doRequest(id, method, url, headersJson, body));
+        }
+
+        @JavascriptInterface
+        public void yahooSummary(final String id, final String sym, final String modules) {
+            pool.execute(() -> quoteSummary(id, sym, modules));
+        }
+
+        @JavascriptInterface
+        public void setWidgetData(String json) {
+            prefs.edit().putString("widget", json == null ? "{}" : json).apply();
+            MarketWidget.refreshAll(getApplicationContext());
         }
 
         @JavascriptInterface
@@ -430,7 +498,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void saveAlerts(String json) {
             prefs.edit().putString("alerts", json == null ? "[]" : json).apply();
-            AlertJobService.schedule(MainActivity.this, json != null && json.contains("\"active\":true"));
+            AlertJobService.schedule(MainActivity.this, (json != null && json.contains("\"active\":true")) || MarketWidget.exists(MainActivity.this));
         }
 
         @JavascriptInterface

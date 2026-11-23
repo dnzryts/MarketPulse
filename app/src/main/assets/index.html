@@ -77,7 +77,7 @@ nav button.on{color:var(--ink);font-weight:700}
 .ranges,.seg{display:flex;gap:6px;margin:14px 0 8px;overflow-x:auto}
 .ranges button,.seg button{flex:1 0 auto;min-width:46px;height:40px;border-radius:10px;background:var(--chip);font-weight:700;font-size:14px;color:var(--mute)}
 .ranges button.on,.seg button.on{background:var(--ink);color:var(--bg)}
-.fig{position:relative;height:240px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;touch-action:pan-y}
+.fig{position:relative;height:280px;background:var(--panel);border:1px solid var(--line);border-radius:14px;overflow:hidden;touch-action:pan-y}
 .fig svg{position:absolute;inset:0;width:100%;height:100%}
 .readout{position:absolute;left:12px;top:10px;font-size:13px;color:var(--mute);background:var(--panel);padding:2px 6px;border-radius:6px;pointer-events:none}
 .readout b{color:var(--ink)}
@@ -251,6 +251,29 @@ button:active{transform:scale(.98)}
 .toast{position:fixed;left:16px;right:16px;bottom:calc(76px + env(safe-area-inset-bottom));z-index:30;background:var(--ink);color:var(--bg);border-radius:12px;padding:10px 10px 10px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;max-width:520px;margin:0 auto;animation:vin .2s ease-out;font-size:15px}
 .toast[hidden]{display:none}
 .toast button{color:var(--accent);font-weight:800;min-height:40px;padding:0 10px;filter:brightness(1.3)}
+.heat-sum{font-size:14px;margin:2px 0 12px;color:var(--mute)}
+.heat-sec{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:12px;margin-bottom:10px}
+.heat-h{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;margin-bottom:8px;font-size:14px}
+.heat-h b{font-size:15px;margin-right:auto}
+.heat-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(76px,1fr));gap:6px}
+.tile{border-radius:10px;padding:8px 6px;min-height:52px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:var(--ink);text-align:center}
+.tile b{font-size:13px}.tile span{font-size:12px;font-weight:700}
+#rfilt[hidden]{display:none}
+.subnav{grid-template-columns:repeat(4,1fr)}.subnav.two{grid-template-columns:1fr 1fr}
+.subnav button{font-size:13.5px}
+#ctype button{flex:0 0 auto;padding:0 14px}
+#d-events .stats div{flex-direction:column;gap:0}#d-events .stats b{white-space:normal}
+.psum{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px}
+.pgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin-top:12px}
+.pgrid div{display:flex;flex-direction:column}.pgrid span{font-size:12.5px;color:var(--mute)}.pgrid b{font-size:15px}
+.alloc{display:flex;height:14px;border-radius:7px;overflow:hidden;background:var(--line)}
+.alloc i{display:block;height:100%}
+.legend{display:flex;flex-wrap:wrap;gap:4px 12px;margin:8px 0 4px;font-size:13px;color:var(--mute)}
+.legend span{display:flex;align-items:center;gap:5px}.legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.ai-why{font-size:13px;margin-top:4px;color:var(--mute)}
+details.card summary{cursor:pointer;min-height:32px;display:flex;align-items:center}
+.wcard.port{background:linear-gradient(135deg,#6b3fd1,#2a1559)}
+[hidden]{display:none!important}
 </style>
 </head>
 <body>
@@ -274,13 +297,15 @@ button:active{transform:scale(.98)}
     <div class="list stagger" id="picks"></div>
     <div class="sec"><h2>Wishlist near target</h2><button class="txtbtn" data-sub="wish">Wishlist</button></div>
     <div class="list" id="nearwish"></div>
+    <div class="sec"><h2>Results &amp; dividends</h2><button class="txtbtn" id="go-cal">Calendar</button></div>
+    <div class="list" id="home-ev"></div>
     <div class="sec"><h2>Recent alerts</h2><button class="txtbtn" data-go="alerts">All alerts</button></div>
     <div class="list inbox" id="recent"></div>
     <div class="ctrl" style="margin-top:14px"><button class="btn" id="brief">AI morning brief</button></div>
   </section>
 
   <section class="view" id="v-markets">
-    <div class="subnav" id="subnav"><button class="on" data-s="watch">Watchlist</button><button data-s="wish">Wishlist</button><button data-s="done">Analysed</button></div>
+    <div class="subnav" id="subnav"><button class="on" data-s="watch">Watchlist</button><button data-s="wish">Wishlist</button><button data-s="port">Portfolio</button><button data-s="done">Analysed</button></div>
     <div class="sub on" id="sub-watch">
     <div class="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
@@ -295,6 +320,10 @@ button:active{transform:scale(.98)}
       <div class="bar"><h2>Stocks you want to buy</h2><button class="txtbtn" id="wish-add">+ Add</button></div>
       <div class="list" id="wish"></div>
       <p class="note">Each wishlist stock gets a buy-target alert: you'll be notified when the price falls to your target. Swipe left to remove.</p>
+    </div>
+    <div class="sub" id="sub-port">
+      <div id="port"></div>
+      <div id="port-trades"></div>
     </div>
     <div class="sub" id="sub-done">
       <div class="bar"><h2>Recently analysed</h2><button class="txtbtn" id="done-clear">Clear</button></div>
@@ -313,8 +342,11 @@ button:active{transform:scale(.98)}
       <div class="state" id="d-state"></div>
     </div>
     <div class="ranges" id="ranges"></div>
+    <div class="seg small" id="ctype" style="margin:0 0 8px;justify-content:flex-end"><button data-v="line">Line</button><button data-v="candle">Candles</button></div>
     <div class="fig" id="fig"><svg id="chart"></svg><div class="readout" id="readout" hidden></div></div>
     <div class="sig" id="signals"><div class="empty">Reading signals…</div></div>
+    <div id="position"></div>
+    <div id="d-events"></div>
     <div class="ctrl"><button class="btn" id="d-ask">Ask the AI analyst</button></div>
     <div class="ctrl"><button class="btn alt" id="d-watch">+ Watchlist</button><button class="btn alt" id="d-wish">+ Wishlist</button><button class="btn alt" id="d-alert">Set alert</button></div>
     <div class="stats" id="stats"></div>
@@ -325,6 +357,7 @@ button:active{transform:scale(.98)}
   <section class="view" id="v-radar">
     <div class="seg" id="mkts"></div>
     <div class="ctrl"><button class="btn" id="scan">Scan now</button><button class="btn alt" id="radar-ai">AI review</button></div>
+    <div class="seg small" id="rmode" style="margin:4px 0 8px"><button data-v="list" class="on">Ranked list</button><button data-v="heat">Sector heatmap</button></div>
     <div class="prog" id="prog" hidden><i></i></div>
     <div class="bar"><h2 id="radar-h">Breakout radar</h2><span class="upd" id="radar-t"></span></div>
     <div class="chips" id="rfilt"></div>
@@ -333,6 +366,12 @@ button:active{transform:scale(.98)}
   </section>
 
   <section class="view" id="v-news">
+    <div class="subnav two" id="newsnav"><button class="on" data-s="head">Headlines</button><button data-s="cal">Results &amp; dividends</button></div>
+    <div id="news-cal" hidden>
+      <p class="note" style="margin:0 2px 10px">Upcoming results (earnings) and dividend dates for the stocks in your watchlist, wishlist and portfolio. Dates marked est. are expected, not confirmed.</p>
+      <div id="cal"></div>
+    </div>
+    <div id="news-head">
     <div class="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
       <input id="nq" type="search" placeholder="Search news: Fed, DBS, Reliance…" autocomplete="off">
@@ -341,7 +380,9 @@ button:active{transform:scale(.98)}
     <div class="bar"><h2>Stocks in these headlines</h2></div>
     <div class="mentions" id="mentions"></div>
     <div class="list news" id="newslist"></div>
-    <p class="note">Headlines from Google News. Green and red dots show headline tone, read from keywords like "beats", "upgrade", "plunges" or "probe": a rough guide only. Tap a story to open it in your browser.</p>
+    <div class="ctrl" style="margin-top:12px"><button class="btn alt" id="ai-tone">AI sentiment for these headlines</button></div>
+    <p class="note">Headlines from Google News. Dots show headline tone: from keywords (like "beats", "plunges") until you run AI sentiment, which reads each headline and explains its likely impact. A guide only. Tap a story to open it in your browser.</p>
+    </div>
   </section>
 
   <section class="view" id="v-analyst">
@@ -371,6 +412,7 @@ button:active{transform:scale(.98)}
     <div class="group"><h3>Profile</h3>
       <div class="item"><span>Name</span><input type="text" id="s-name" placeholder="Your name" autocomplete="name"></div>
       <div class="item"><span>Focus markets</span><div class="mk" id="s-mk"></div></div>
+      <div class="item"><span>Base currency<small>Portfolio totals are shown in this currency.</small></span><select id="s-base"><option value="SGD">SGD</option><option value="USD">USD</option><option value="INR">INR</option></select></div>
     </div>
     <div class="group"><h3>Appearance</h3>
       <div class="item"><span>Theme</span><div class="seg small" id="s-theme"><button data-v="system">System</button><button data-v="light">Light</button><button data-v="dark">Dark</button></div></div>
@@ -380,6 +422,7 @@ button:active{transform:scale(.98)}
     </div>
     <div class="group"><h3>Notifications</h3>
       <div class="item"><span>Alert notifications<small id="notif-note">Price targets, big moves and wishlist buy levels.</small></span><label class="switch"><input type="checkbox" id="s-notif"><i></i></label></div>
+      <div class="item"><span>Home-screen widget<small>Long-press your home screen, tap Widgets, then drag MarketPulse onto it. Shows your first five watchlist stocks.</small></span></div>
       <div class="item"><span>Breakout alerts<small>Notify when a watchlist or wishlist stock scores 70+ on the radar (checked while the app is open).</small></span><label class="switch"><input type="checkbox" id="s-brk"><i></i></label></div>
     </div>
     <div class="group"><h3>AI analyst</h3>
@@ -421,6 +464,8 @@ button:active{transform:scale(.98)}
 <script src="app.js"></script>
 <script src="radar.js"></script>
 <script src="agent.js"></script>
+<script src="portfolio.js"></script>
+<script src="events.js"></script>
 <script src="features.js"></script>
 <script src="gestures.js"></script>
 </body>

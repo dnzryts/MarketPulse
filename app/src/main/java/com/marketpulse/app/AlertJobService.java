@@ -46,6 +46,7 @@ public class AlertJobService extends JobService {
     public boolean onStartJob(final JobParameters params) {
         new Thread(() -> {
             try { check(getApplicationContext()); } catch (Exception ignored) { }
+            try { refreshWidget(getApplicationContext()); } catch (Exception ignored) { }
             jobFinished(params, false);
         }).start();
         return true;
@@ -113,6 +114,31 @@ public class AlertJobService extends JobService {
                 p.edit().putString("triggered", out.toString()).apply();
             } catch (Exception ignored) { }
         }
+    }
+
+    /* ---------- widget ---------- */
+
+    /** Re-prices the symbols shown on the home-screen widget. */
+    static void refreshWidget(Context ctx) throws Exception {
+        if (!MarketWidget.exists(ctx)) return;
+        SharedPreferences p = ctx.getSharedPreferences(PREFS, MODE_PRIVATE);
+        JSONObject data = new JSONObject(p.getString("widget", "{}"));
+        JSONArray rows = data.optJSONArray("rows");
+        if (rows == null || rows.length() == 0) return;
+        JSONArray out = new JSONArray();
+        for (int i = 0; i < rows.length(); i++) {
+            JSONObject r = rows.getJSONObject(i);
+            double[] q = quote(r.optString("sym", r.optString("s")));
+            if (q != null) {
+                r.put("p", fmt(q[0]));
+                if (q[1] > 0) r.put("c", (q[0] / q[1] - 1) * 100);
+            }
+            out.put(r);
+        }
+        data.put("rows", out);
+        data.put("t", System.currentTimeMillis());
+        p.edit().putString("widget", data.toString()).apply();
+        MarketWidget.refreshAll(ctx);
     }
 
     /* ---------- the check ---------- */

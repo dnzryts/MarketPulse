@@ -37,6 +37,15 @@ function http(url, opt = {}){
   });
 }
 MP.http = http;
+/* Yahoo quoteSummary (earnings dates, dividends, valuation) goes through the app, which handles Yahoo's session cookie. */
+MP.summary = (sym, modules) => {
+  if (window.Native && Native.yahooSummary) return new Promise((res, rej) => {
+    const id = 'r' + (++seq); pending[id] = {res: t => { try { res(JSON.parse(t)); } catch(e){ rej(e); } }, rej};
+    Native.yahooSummary(id, sym, modules);
+    setTimeout(() => { if (pending[id]){ delete pending[id]; rej(new Error('Timed out')); } }, 30000);
+  });
+  return http('https://query2.finance.yahoo.com/v10/finance/quoteSummary/' + encodeURIComponent(sym) + '?modules=' + modules).then(JSON.parse);
+};
 async function yahoo(path){
   try { return JSON.parse(await http('https://query1.finance.yahoo.com' + path)); }
   catch(e){ return JSON.parse(await http('https://query2.finance.yahoo.com' + path)); }
@@ -113,7 +122,9 @@ function newsQuery(sym){
 }
 MP.newsQuery = newsQuery;
 function newsHTML(items){
-  return items.length ? items.map(n => `<a href="${esc(n.link)}" data-link="${esc(n.link)}"><div class="h">${esc(n.title)}</div><div class="m"><span class="dot ${n.tone > 0 ? 'pos' : n.tone < 0 ? 'neg' : ''}"></span>${esc(n.src || 'News')}${n.t ? ' · ' + ago(n.t) : ''}${n.syms.slice(0, 3).map(s => ` <span class="tag">${esc(s.replace(/\.(SI|NS)$/, ''))}</span>`).join('')}</div></a>`).join('')
+  const cache = store.get('mp.aiTone', {});
+  items.forEach(n => { if (cache[n.title]) n.ai = cache[n.title]; });
+  return items.length ? items.map(n => `<a href="${esc(n.link)}" data-link="${esc(n.link)}"><div class="h">${esc(n.title)}</div>${n.ai ? `<div class="ai-why"><b class="${n.ai.s > 0 ? 'up-t' : n.ai.s < 0 ? 'down-t' : ''}">AI: ${['Very bearish', 'Bearish', 'Neutral', 'Bullish', 'Very bullish'].at(Math.max(-2, Math.min(2, n.ai.s)) + 2)}</b> · ${esc(n.ai.why || '')}</div>` : ''}<div class="m"><span class="dot ${(n.ai ? n.ai.s : n.tone) > 0 ? 'pos' : (n.ai ? n.ai.s : n.tone) < 0 ? 'neg' : ''}"></span>${esc(n.src || 'News')}${n.t ? ' · ' + ago(n.t) : ''}${n.syms.slice(0, 3).map(s => ` <span class="tag">${esc(s.replace(/\.(SI|NS)$/, ''))}</span>`).join('')}</div></a>`).join('')
     : '<div class="empty">No recent headlines found.</div>';
 }
 async function loadNews(sel, query, limit = 25){
@@ -129,12 +140,14 @@ async function loadNews(sel, query, limit = 25){
     } else items = await fetchNews(query);
     items.sort((a, b) => b.t - a.t); items = items.slice(0, limit);
     el.innerHTML = newsHTML(items);
+    MP.lastNews = MP.lastNews || {}; MP.lastNews[sel] = items;
     if (sel === '#newslist') renderMentions(items);
   } catch(e){ el.innerHTML = `<div class="err">Couldn't load news (${esc(e.message)}). Check your connection and tap refresh.</div>`; }
 }
+MP.rerenderNews = sel => { const items = MP.lastNews && MP.lastNews[sel]; if (!items) return; $(sel).innerHTML = newsHTML(items); if (sel === '#newslist') renderMentions(items); };
 function renderMentions(items){
   const m = {};
-  for (const n of items) for (const s of n.syms){ (m[s] = m[s] || {n: 0, tone: 0}); m[s].n++; m[s].tone += n.tone; }
+  for (const n of items){ const syms = new Set(n.syms.concat(n.ai && n.ai.t ? n.ai.t.filter(s => BY_SYM[s]) : [])); for (const s of syms){ (m[s] = m[s] || {n: 0, tone: 0}); m[s].n++; m[s].tone += n.ai ? n.ai.s : n.tone; } }
   const list = Object.entries(m).sort((a, b) => b[1].n - a[1].n || Math.abs(b[1].tone) - Math.abs(a[1].tone)).slice(0, 15);
   $('#mentions').innerHTML = list.length ? list.map(([s, v]) => `<button data-open="${esc(s)}"><b>${esc(s.replace(/\.(SI|NS)$/, ''))}</b><span><span class="dot ${v.tone > 0 ? 'pos' : v.tone < 0 ? 'neg' : ''}"></span> ${v.n} headline${v.n > 1 ? 's' : ''} · ${v.tone > 0 ? 'positive' : v.tone < 0 ? 'negative' : 'neutral'}</span></button>`).join('')
     : '<span class="note" style="margin:0">No SGX, NASDAQ or NSE names from the scan lists in these headlines.</span>';
@@ -276,26 +289,58 @@ function renderDetailHead(){
 }
 function renderRanges(){ $('#ranges').innerHTML = RANGES.map(r => `<button class="${r[0] === range ? 'on' : ''}" data-r="${r[0]}">${r[0]}</button>`).join(''); }
 $('#ranges').addEventListener('click', e => { const b = e.target.closest('[data-r]'); if (!b) return; range = b.dataset.r; renderRanges(); loadRange(); });
-let series = null, geo = null;
+let series = null, geo = null, ctype = store.get('mp.chartType', 'line');
+function renderCtype(){ document.querySelectorAll('#ctype button').forEach(b => b.classList.toggle('on', b.dataset.v === ctype)); }
+$('#ctype').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; ctype = b.dataset.v; store.set('mp.chartType', ctype); renderCtype(); drawChart(); });
+renderCtype();
 async function loadRange(){
   const sym = current, R = RANGES.find(r => r[0] === range);
   const svg = $('#chart'); $('#readout').hidden = true;
-  if (range === '1D' && quotes[sym] && quotes[sym].pts){ series = {pts: quotes[sym].pts, base: prevClose(quotes[sym].meta), r: '1D'}; drawChart(); }
+  if (range === '1D' && quotes[sym] && quotes[sym].pts){ series = {pts: quotes[sym].pts, bars: quotes[sym].bars, base: prevClose(quotes[sym].meta), r: '1D'}; drawChart(); }
   else svg.innerHTML = '';
   setBusy(1);
   try {
     const r = await chart(sym, R[1], R[2]);
     if (sym !== current || R[0] !== range) return;
     if (range === '1D'){ quotes[sym] = r; renderDetailHead(); }
-    series = {pts: r.pts, base: range === '1D' ? prevClose(r.meta) : null, r: range};
+    series = {pts: r.pts, bars: r.bars, base: range === '1D' ? prevClose(r.meta) : null, r: range};
     drawChart();
   } catch(e){
     if (sym === current) svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="currentColor" font-size="14">Chart unavailable: ${esc(e.message)}</text>`;
   } finally { setBusy(-1); }
 }
+const smaLine = (bars, k) => bars.map((b, i) => i >= k - 1 ? bars.slice(i - k + 1, i + 1).reduce((s, x) => s + x.c, 0) / k : null);
+function drawCandles(svg, W, H){
+  const bars = series.bars, n = bars.length;
+  const L = 8, R = W - 58, T = 34, PB = H - 26 - 46, VT = H - 26 - 38, VB = H - 26;
+  const s20 = n >= 20 ? smaLine(bars, 20) : null, s50 = n >= 50 ? smaLine(bars, 50) : null;
+  const ys = bars.flatMap(b => [b.h, b.l]).concat((s20 || []).filter(v => v != null), (s50 || []).filter(v => v != null));
+  let lo = Math.min(...ys), hi = Math.max(...ys); const pad = (hi - lo) * .06 || 1; lo -= pad; hi += pad;
+  const step = (R - L) / n, cw = Math.max(1, Math.min(9, step * .62));
+  const x = i => L + step * (i + .5), y = v => PB - ((v - lo) / (hi - lo)) * (PB - T);
+  const vmax = Math.max(1, ...bars.map(b => b.v || 0));
+  let grid = '';
+  for (let k = 0; k <= 3; k++){ const v = lo + (hi - lo) * (k + .5) / 4, yy = y(v);
+    grid += `<line x1="${L}" x2="${R}" y1="${yy}" y2="${yy}" stroke="var(--line)"/><text x="${R + 6}" y="${yy + 4}" font-size="11" fill="var(--mute)">${nf(v, v >= 1000 ? 0 : 2)}</text>`; }
+  let candles = '', vols = '';
+  bars.forEach((b, i) => {
+    const o = b.o ?? (i ? bars[i - 1].c : b.c), up = b.c >= o, col = up ? 'var(--up)' : 'var(--down)', cx = x(i).toFixed(1);
+    const yo = y(o), yc = y(b.c), top = Math.min(yo, yc), hgt = Math.max(1, Math.abs(yc - yo));
+    candles += `<line x1="${cx}" x2="${cx}" y1="${y(b.h).toFixed(1)}" y2="${y(b.l).toFixed(1)}" stroke="${col}"/><rect x="${(x(i) - cw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${cw.toFixed(1)}" height="${hgt.toFixed(1)}" fill="${col}" ${up ? 'fill-opacity=".35" stroke="' + col + '"' : ''}/>`;
+    const vh = (b.v || 0) / vmax * (VB - VT);
+    vols += `<rect x="${(x(i) - cw / 2).toFixed(1)}" y="${(VB - vh).toFixed(1)}" width="${cw.toFixed(1)}" height="${vh.toFixed(1)}" fill="${col}" fill-opacity=".45"/>`;
+  });
+  const path = arr => arr ? arr.map((v, i) => v == null ? '' : (i && arr[i - 1] != null ? 'L' : 'M') + x(i).toFixed(1) + ' ' + y(v).toFixed(1)).join('') : '';
+  const legend = `<text x="${L + 4}" y="22" font-size="11" fill="var(--mute)">${s20 ? '<tspan fill="#e8a317">━</tspan> 20 avg  ' : ''}${s50 ? '<tspan fill="#5b8def">━</tspan> 50 avg  ' : ''}Volume below</text>`;
+  svg.innerHTML = `${grid}<line x1="${L}" x2="${R}" y1="${VT - 4}" y2="${VT - 4}" stroke="var(--line)"/>${vols}${candles}
+    <path d="${path(s20)}" fill="none" stroke="#e8a317" stroke-width="1.5"/><path d="${path(s50)}" fill="none" stroke="#5b8def" stroke-width="1.5"/>${legend}
+    <g id="cur" style="display:none"><line id="cl" y1="${T - 6}" y2="${VB}" stroke="var(--ink)" stroke-opacity=".5"/><circle id="cc" r="4" fill="var(--ink)"/></g>`;
+  geo = {x, y, L, R, pts: series.pts, bars, candle: true};
+}
 function drawChart(){
   const svg = $('#chart'), W = svg.clientWidth, H = svg.clientHeight;
   if (!series || series.pts.length < 2 || !W){ svg.innerHTML = W ? '<text x="50%" y="50%" text-anchor="middle" fill="currentColor" font-size="14">No chart data for this range</text>' : ''; geo = null; return; }
+  if (ctype === 'candle' && series.bars && series.bars.length === series.pts.length){ drawCandles(svg, W, H); return; }
   const pts = series.pts, first = series.base ?? pts[0][1], last = pts[pts.length - 1][1], up = last >= first;
   const ys = pts.map(p => p[1]).concat(series.base != null ? [series.base] : []);
   let lo = Math.min(...ys), hi = Math.max(...ys); const pad = (hi - lo) * .08 || 1; lo -= pad; hi += pad;
@@ -318,12 +363,13 @@ const chartRO = new ResizeObserver(() => { if (current) drawChart(); }); chartRO
 function scrub(e){
   if (!geo) return;
   const r = $('#chart').getBoundingClientRect(), px = e.clientX - r.left;
-  const i = Math.max(0, Math.min(geo.pts.length - 1, Math.round((px - geo.L) / (geo.R - geo.L) * (geo.pts.length - 1))));
+  const i = geo.candle ? Math.max(0, Math.min(geo.pts.length - 1, Math.floor((px - geo.L) / (geo.R - geo.L) * geo.pts.length))) : Math.max(0, Math.min(geo.pts.length - 1, Math.round((px - geo.L) / (geo.R - geo.L) * (geo.pts.length - 1))));
   const p = geo.pts[i], cx = geo.x(i), cy = geo.y(p[1]);
   $('#cur').style.display = ''; $('#cl').setAttribute('x1', cx); $('#cl').setAttribute('x2', cx); $('#cc').setAttribute('cx', cx); $('#cc').setAttribute('cy', cy);
   const intra = /1D|5D/.test(series.r);
   $('#readout').hidden = false;
-  $('#readout').innerHTML = '<b>' + nf(p[1], dp(p[1])) + '</b> · ' + esc(new Date(p[0] * 1000).toLocaleString([], {month:'short', day:'numeric', hour: intra ? '2-digit' : undefined, minute: intra ? '2-digit' : undefined}));
+  const bb = geo.candle && geo.bars.at(i);
+  $('#readout').innerHTML = (bb ? `O ${nf(bb.o ?? bb.c, dp(bb.c))} H ${nf(bb.h, dp(bb.c))} L ${nf(bb.l, dp(bb.c))} <b>C ${nf(bb.c, dp(bb.c))}</b> · ` : '<b>' + nf(p[1], dp(p[1])) + '</b> · ') + esc(new Date(p[0] * 1000).toLocaleString([], {month:'short', day:'numeric', hour: intra ? '2-digit' : undefined, minute: intra ? '2-digit' : undefined}));
 }
 function endScrub(){ const c = $('#cur'); if (c) c.style.display = 'none'; $('#readout').hidden = true; }
 const fig = $('#fig');

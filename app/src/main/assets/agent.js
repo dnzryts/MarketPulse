@@ -13,15 +13,17 @@ const TOOLS = [
     input_schema: {type: 'object', properties: {query: {type: 'string'}, days: {type: 'integer', description: 'Look-back window in days, default 3, max 30'}}, required: ['query']}},
   {name: 'find_symbol', description: 'Look up Yahoo Finance symbols by company name or ticker.',
     input_schema: {type: 'object', properties: {query: {type: 'string'}}, required: ['query']}},
-  {name: 'get_user_lists', description: "The user's watchlist, wishlist (stocks they want to buy, with target prices) and active price alerts.",
-    input_schema: {type: 'object', properties: {}}}
+  {name: 'get_user_lists', description: "The user's watchlist, wishlist (stocks they want to buy, with target prices), active price alerts and portfolio (holdings, average cost, P&L in their base currency).",
+    input_schema: {type: 'object', properties: {}}},
+  {name: 'get_events', description: 'Upcoming earnings (results) dates, ex-dividend and dividend payment dates for the user\'s stocks, or for given symbols, plus dividend yield and P/E.',
+    input_schema: {type: 'object', properties: {symbols: {type: 'array', items: {type: 'string'}, description: 'Optional Yahoo symbols; default = the user\'s stocks'}, days: {type: 'integer', description: 'Look-ahead window, default 60'}}}}
 ];
 const r2 = n => n == null || isNaN(n) ? null : Math.round(n * 100) / 100;
 function compact(r){
   return {symbol: r.symbol, name: r.name, score: r.score, label: r.label, price: r2(r.price), currency: r.currency, chg1d_pct: r2(r.chg1d),
     high20: r2(r.hi20), low20: r2(r.lo20), pct_from_20d_high: r2(r.distHi20), breakout_20d: r.breakout, breakdown_20d: r.breakdown,
     volume_vs_20d_avg: r2(r.volRatio), rsi14: r2(r.rsi14), sma20: r2(r.sma20), sma50: r2(r.sma50), ret_1w_pct: r2(r.ret5), ret_1m_pct: r2(r.ret20), ret_3m_pct: r2(r.ret60),
-    high52: r2(r.hi52), low52: r2(r.lo52), signals: r.tags.map(t => t[0]), news_48h: r.news || null, data_as_of: new Date(r.asOf * 1000).toISOString()};
+    high52: r2(r.hi52), low52: r2(r.lo52), sector: r.sector || null, vs_index_1m_pct: r2(r.rs20), vs_index_3m_pct: r2(r.rs60), signals: r.tags.map(t => t[0]), news_48h: r.news || null, data_as_of: new Date(r.asOf * 1000).toISOString()};
 }
 const RUN = {
   async scan_market({market, limit = 10, sort = 'score'}, step){
@@ -47,7 +49,14 @@ const RUN = {
     return items.slice(0, 15).map(n => ({title: n.title, source: n.src, published: new Date(n.t).toISOString(), tone: n.tone, tickers: n.syms}));
   },
   async find_symbol({query}, step){ step('Looking up ' + query); return await MP.searchSymbols(query); },
-  async get_user_lists(){ return {watchlist: MP.getWatch(), wishlist: MP.getWish ? MP.getWish() : [], alerts: MP.getAlerts ? MP.getAlerts() : []}; }
+  async get_user_lists(){ return {watchlist: MP.getWatch(), wishlist: MP.getWish ? MP.getWish() : [], alerts: MP.getAlerts ? MP.getAlerts() : [], portfolio: MP.portfolioSummary ? MP.portfolioSummary() : null}; },
+  async get_events({symbols, days = 60}, step){
+    step('Checking results and dividend dates…');
+    if (!symbols || !symbols.length) return await MP.upcomingEvents(days);
+    const out = [];
+    for (const s of symbols.slice(0, 15)){ try { const v = await MP.stockEvents(s.toUpperCase()); out.push({symbol: s.toUpperCase(), events: v.ev.map(e => ({event: e.kind, date: new Date(e.t).toISOString().slice(0, 10), estimated: !!e.est, detail: e.detail})), dividend_yield: v.facts.yield, pe_trailing: v.facts.pe, pe_forward: v.facts.fpe, market_cap: v.facts.cap}); } catch(e){ out.push({symbol: s, error: e.message}); } }
+    return out;
+  }
 };
 
 function system(){
@@ -163,6 +172,26 @@ async function send(text, sym){
   save(); running = false; $('#send').disabled = false; render();
   const last = $('#chat').lastElementChild; if (last) last.scrollIntoView({behavior: 'smooth', block: 'start'});
 }
+/* AI headline sentiment: one quick call scores a batch of headlines. */
+MP.aiSentiment = async items => {
+  const cache = store.get('mp.aiTone', {}), todo = items.filter(n => !cache[n.title]).slice(0, 30);
+  if (!todo.length) return 0;
+  const universe = Object.entries(MP.BY_SYM).map(([s, e]) => s + '=' + e.name).join('; ');
+  const prompt = `Rate how each headline is likely to affect the share price of the company it is about. Score -2 (very bearish) to 2 (very bullish), 0 if neutral or unclear.
+Give a reason of at most 12 words, and list affected tickers using these Yahoo symbols where they match: ${universe}.
+Reply with ONLY a JSON array, one object per headline: [{"i":0,"s":1,"why":"...","t":["NVDA"]}]
+Headlines:
+${todo.map((n, i) => i + '. ' + n.title + (n.src ? ' (' + n.src + ')' : '')).join('\n')}`;
+  const res = await callClaude({model: 'claude-haiku-5-5', max_tokens: 2500, messages: [{role: 'user', content: prompt}]});
+  const text = res.content.filter(b => b.type === 'text').map(b => b.text).join('');
+  const m = text.match(/\[[\s\S]*\]/); if (!m) throw new Error('Unexpected AI reply');
+  const arr = JSON.parse(m[0]); let k = 0;
+  for (const o of arr){ const n = todo[o.i]; if (!n) continue; cache[n.title] = {s: Math.max(-2, Math.min(2, Math.round(+o.s || 0))), why: String(o.why || '').slice(0, 120), t: Array.isArray(o.t) ? o.t.map(String).slice(0, 4) : []}; k++; }
+  const keys = Object.keys(cache); if (keys.length > 600) keys.slice(0, keys.length - 600).forEach(x => delete cache[x]);
+  store.set('mp.aiTone', cache);
+  return k;
+};
+
 MP.askAnalyst = (prompt, sym) => { MP.show('analyst'); setTimeout(() => send(prompt, sym), 50); };
 
 $('#quick').addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (b) send(QUICK[+b.dataset.q][1]); });

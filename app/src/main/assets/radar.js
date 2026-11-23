@@ -44,6 +44,10 @@ function techScore(x){
   else if (x.sma50 && x.price > x.sma50) s += 7;
   else if (x.sma50 && x.price < x.sma50) tags.push(['Below 50D avg', '']);
   if (x.ret20 > 0) s += Math.min(15, Math.round(x.ret20));
+  if (x.rs20 != null){
+    if (x.rs20 >= 5){ s += 5; tags.push(['Beats index ' + pct(x.rs20), 'good']); }
+    else if (x.rs20 <= -5) tags.push(['Lags index ' + pct(x.rs20), '']);
+  }
   if (x.rsi14 != null){
     if (x.rsi14 >= 55 && x.rsi14 <= 75) s += 10;
     if (x.rsi14 > 78){ s -= 5; tags.push(['Overbought RSI ' + Math.round(x.rsi14), 'bad']); }
@@ -73,14 +77,27 @@ function applyNews(r){
 const label = s => s >= 70 ? 'Breakout watch' : s >= 50 ? 'Building' : s >= 30 ? 'Neutral' : 'Weak';
 MP.label = label;
 
+/* Benchmark index for a symbol, and its returns (for relative strength). */
+const indexOf = sym => /\.SI$/.test(sym) ? '^STI' : /\.(NS|BO)$/.test(sym) ? '^NSEI' : '^IXIC';
+MP.indexOf = indexOf;
+const idxCache = {};
+async function indexReturns(idx){
+  const c = idxCache[idx]; if (c && Date.now() - c.at < 15 * 60e3) return c.r;
+  const d = await MP.chart(idx, '6mo', '1d'), cl = d.bars.map(b => b.c), n = cl.length;
+  const r = {ret20: n > 20 ? (cl[n - 1] / cl[n - 21] - 1) * 100 : null, ret60: n > 60 ? (cl[n - 1] / cl[n - 61] - 1) * 100 : null};
+  idxCache[idx] = {at: Date.now(), r}; return r;
+}
+function withRS(x, ir){ if (ir && ir.ret20 != null && x.ret20 != null) x.rs20 = x.ret20 - ir.ret20; if (ir && ir.ret60 != null && x.ret60 != null) x.rs60 = x.ret60 - ir.ret60; return x; }
+
 /* Full analysis of one symbol (used by detail view and the AI analyst). */
 const cache = {};
 async function analyze(sym, withNews = true, fresh = false){
   const c = cache[sym];
   if (!fresh && c && Date.now() - c.at < 10 * 60e3 && (!withNews || c.r.news)) return c.r;
   const d = await MP.chart(sym, '6mo', '1d');
-  const x = indicators(d.bars, d.meta), t = techScore(x);
-  const r = {symbol: sym, name: MP.displayName(sym, d.meta), ...x, tech: t.score, score: t.score, tags: t.tags};
+  let ir = null; try { ir = await indexReturns(indexOf(sym)); } catch(e){}
+  const x = withRS(indicators(d.bars, d.meta), ir), t = techScore(x);
+  const r = {symbol: sym, name: MP.displayName(sym, d.meta), sector: (window.SECTORS || {})[sym] || '', ...x, tech: t.score, score: t.score, tags: t.tags};
   if (withNews){ try { r.news = await newsBuzz(sym); applyNews(r); } catch(e){} }
   r.label = label(r.score);
   cache[sym] = {at: Date.now(), r};
@@ -99,17 +116,18 @@ async function scan(market, onProgress, fresh = false){
   const key = 'mp.scan.' + market, prev = MP.store.get(key, null);
   if (!fresh && prev && Date.now() - prev.at < 15 * 60e3) return prev;
   const list = U[market].list;
+  let ir = null; try { ir = await indexReturns(U[market].index); } catch(e){}
   const rows = (await pool(list, 6, async e => {
     const d = await MP.chart(e[0], '6mo', '1d');
-    const x = indicators(d.bars, d.meta), t = techScore(x);
-    return {symbol: e[0], name: e[1], ...x, tech: t.score, score: t.score, tags: t.tags};
+    const x = withRS(indicators(d.bars, d.meta), ir), t = techScore(x);
+    return {symbol: e[0], name: e[1], sector: (window.SECTORS || {})[e[0]] || 'Other', ...x, tech: t.score, score: t.score, tags: t.tags};
   }, (k, n) => onProgress && onProgress(k / n * .75))).filter(Boolean);
   rows.sort((a, b) => b.score - a.score);
   const leaders = rows.filter((r, i) => i < 12 || (r.volRatio || 0) >= 2);
   await pool(leaders, 4, async r => { r.news = await newsBuzz(r.symbol); applyNews(r); }, (k, n) => onProgress && onProgress(.75 + k / n * .25));
   rows.forEach(r => r.label = label(r.score));
   rows.sort((a, b) => b.score - a.score);
-  const res = {market, at: Date.now(), rows, failed: list.length - rows.length};
+  const res = {market, at: Date.now(), rows, failed: list.length - rows.length, index: ir};
   MP.store.set(key, res);
   if (MP.onScan) try { MP.onScan(res); } catch(e){}
   return res;
@@ -117,13 +135,30 @@ async function scan(market, onProgress, fresh = false){
 MP.scan = scan;
 
 /* ---------- Radar UI ---------- */
-let market = MP.store.get('mp.market', 'SGX'), filter = 'all', result = null, scanning = false;
+let market = MP.store.get('mp.market', 'SGX'), filter = 'all', result = null, scanning = false, mode = MP.store.get('mp.radarMode', 'list');
 const FILTERS = [['all', 'All'], ['brk', 'Breakouts'], ['vol', 'Volume surge'], ['news', 'In the news'], ['weak', 'Breaking down']];
 function renderMkts(){ $('#mkts').innerHTML = Object.keys(U).map(k => `<button class="${k === market ? 'on' : ''}" data-m="${k}">${esc(U[k].label)}</button>`).join(''); }
 function renderFilters(){ $('#rfilt').innerHTML = FILTERS.map(f => `<button class="${f[0] === filter ? 'on' : ''}" data-f="${f[0]}">${f[1]}</button>`).join(''); }
 const sClass = s => s >= 70 ? 's3' : s >= 50 ? 's2' : '';
+function heatColor(c){
+  const k = Math.min(1, Math.abs(c) / 3);
+  return c >= 0 ? `rgba(16,${Math.round(150 + 60 * k)},90,${0.25 + 0.65 * k})` : `rgba(${Math.round(200 + 40 * k)},40,30,${0.25 + 0.65 * k})`;
+}
+function renderHeat(){
+  const el = $('#radar'), by = {};
+  for (const r of result.rows) (by[r.sector || 'Other'] = by[r.sector || 'Other'] || []).push(r);
+  const secs = Object.entries(by).map(([s, rs]) => ({s, rs: rs.sort((a, b) => b.chg1d - a.chg1d), avg: rs.reduce((t, r) => t + r.chg1d, 0) / rs.length, rs20: rs.reduce((t, r) => t + (r.rs20 || 0), 0) / rs.length})).sort((a, b) => b.avg - a.avg);
+  const best = secs[0], worst = secs[secs.length - 1];
+  el.innerHTML = `<div class="heat-sum">Strongest today: <b class="up-t">${esc(best.s)} ${pct(best.avg)}</b> · Weakest: <b class="down-t">${esc(worst.s)} ${pct(worst.avg)}</b></div>` +
+    secs.map(g => `<div class="heat-sec"><div class="heat-h"><b>${esc(g.s)}</b><span class="${g.avg >= 0 ? 'up-t' : 'down-t'}">${pct(g.avg)} today</span><span class="nm">1M vs index ${pct(g.rs20)}</span></div>
+      <div class="heat-grid">${g.rs.map(r => `<button class="tile" data-open="${esc(r.symbol)}" style="background:${heatColor(r.chg1d)}"><b>${esc(r.symbol.replace(/\.(SI|NS)$/, ''))}</b><span>${pct(r.chg1d)}</span></button>`).join('')}</div></div>`).join('');
+}
+function renderModes(){ document.querySelectorAll('#rmode button').forEach(b => b.classList.toggle('on', b.dataset.v === mode)); $('#rfilt').hidden = mode === 'heat'; }
+$('#rmode').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; mode = b.dataset.v; MP.store.set('mp.radarMode', mode); renderModes(); renderRadar(); });
 function renderRadar(){
   const el = $('#radar');
+  renderModes();
+  if (result && mode === 'heat'){ $('#radar-h').textContent = U[market].label + ' sector heatmap'; $('#radar-t').textContent = 'Scanned ' + new Date(result.at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); renderHeat(); return; }
   $('#radar-h').textContent = U[market].label + ' breakout radar';
   if (!result){ el.innerHTML = '<div class="empty">Tap <b>Scan now</b> to rank about ' + U[market].list.length + ' large ' + esc(U[market].label) + ' stocks by breakout signals and news buzz.</div>'; $('#radar-t').textContent = ''; return; }
   $('#radar-t').textContent = 'Scanned ' + new Date(result.at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'});
@@ -168,7 +203,7 @@ MP.renderSignals = async (sym, el, fresh) => {
     const C = 2 * Math.PI * 27, col = r.score >= 70 ? 'var(--hot)' : r.score >= 50 ? 'var(--ink)' : 'var(--mute)';
     const facts = [['RSI (14)', r.rsi14 != null ? Math.round(r.rsi14) : '–'], ['Volume vs 20D avg', r.volRatio != null ? nf(r.volRatio, 1) + '×' : '–'],
       ['20-day high', nf(r.hi20, dp(r.hi20))], ['20-day low', nf(r.lo20, dp(r.lo20))], ['50-day avg', nf(r.sma50, dp(r.sma50))], ['1M / 3M', pct(r.ret20) + ' / ' + pct(r.ret60)],
-      ['News, 48h', r.news ? r.news.count + ' headlines' : '–'], ['Headline tone', r.news ? (r.news.tone > 0 ? 'Positive' : r.news.tone < 0 ? 'Negative' : 'Neutral') : '–']];
+      ['vs index, 1M', r.rs20 != null ? pct(r.rs20) : '–'], ['Sector', r.sector || '–'], ['News, 48h', r.news ? r.news.count + ' headlines' : '–'], ['Headline tone', r.news ? (r.news.tone > 0 ? 'Positive' : r.news.tone < 0 ? 'Negative' : 'Neutral') : '–']];
     el.innerHTML = `<div class="sig-top"><div class="gauge"><svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="27" fill="none" stroke="var(--line)" stroke-width="7"/><circle cx="32" cy="32" r="27" fill="none" stroke="${col}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(r.score / 100 * C).toFixed(1)} ${C.toFixed(1)}"/></svg><b>${r.score}</b></div>
       <div><h3>${esc(r.label)}</h3><p>Breakout score out of 100, from price, volume, trend, momentum and news. A signal to research, not a forecast.</p></div></div>
       <div class="tags">${r.tags.map(t => `<span class="tag ${t[1]}">${esc(t[0])}</span>`).join('')}</div>

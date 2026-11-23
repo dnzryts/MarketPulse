@@ -87,7 +87,7 @@ MP.onProfileShow = () => {
   $('#s-key').value = store.get('mp.key', '');
   $('#s-model').value = store.get('mp.model', 'claude-sonnet-5-5');
   $('#s-web').checked = store.get('mp.web', true);
-  applyTheme(); renderMe();
+  applyTheme(); renderMe(); if (MP.onBaseShow) MP.onBaseShow();
 };
 
 /* ---------- swipe to delete ---------- */
@@ -252,7 +252,7 @@ $('#done-clear').addEventListener('click', () => { store.set('mp.done', []); ren
 function showSub(s){
   document.querySelectorAll('#subnav button').forEach(b => b.classList.toggle('on', b.dataset.s === s));
   document.querySelectorAll('.sub').forEach(x => x.classList.toggle('on', x.id === 'sub-' + s));
-  if (s === 'wish') renderWish(); if (s === 'done') renderDone();
+  if (s === 'wish') renderWish(); if (s === 'done') renderDone(); if (s === 'port' && MP.renderPortfolio){ MP.renderPortfolio(); MP.loadFx && MP.loadFx().then(MP.renderPortfolio); }
 }
 $('#subnav').addEventListener('click', e => { const b = e.target.closest('[data-s]'); if (b) showSub(b.dataset.s); });
 document.addEventListener('click', e => {
@@ -261,7 +261,7 @@ document.addEventListener('click', e => {
 });
 
 /* ---------- detail page buttons ---------- */
-MP.onDetailOpen = sym => { $('#d-wish').textContent = getWish().some(w => w.sym === sym) ? 'Edit target' : '+ Wishlist'; };
+MP.onDetailOpen = sym => { $('#d-wish').textContent = getWish().some(w => w.sym === sym) ? 'Edit target' : '+ Wishlist'; if (MP.renderPosition) MP.renderPosition(sym); if (MP.renderStockEvents) MP.renderStockEvents(sym); };
 $('#d-wish').addEventListener('click', () => addWish(MP.current()));
 $('#d-alert').addEventListener('click', () => newAlert(MP.current()));
 
@@ -278,7 +278,7 @@ MP.onScan = res => {
 };
 
 /* ---------- dashboard ---------- */
-MP.extraSymbols = () => Object.values(INDEX).concat(getWish().map(w => w.sym));
+MP.extraSymbols = () => Object.values(INDEX).concat(getWish().map(w => w.sym), MP.portfolioSymbols ? MP.portfolioSymbols() : []);
 function sparkPath(pts, W, H){
   if (!pts || pts.length < 2) return '';
   const ys = pts.map(p => p[1]), lo = Math.min(...ys), hi = Math.max(...ys), sp = hi - lo || 1;
@@ -311,6 +311,10 @@ function renderHome(){
   });
   const w = MP.getWatch().filter(s => !s.startsWith('^')).map(s => MP.quotes[s] && MP.quotes[s].meta && MP.change(MP.quotes[s].meta)).filter(Boolean);
   const upN = w.filter(c => c.pct >= 0).length;
+  const pf = MP.portfolioCard ? MP.portfolioCard() : null;
+  if (pf) cards.unshift(`<button class="wcard port" data-sub="port"><div class="wt"><span>My portfolio</span><span>${esc(pf.base)}</span></div>
+    <div class="wv">${nf(pf.value)}</div><div class="wc">${pf.day >= 0 ? '▲ ' : '▼ '}${pct(pf.dayPct)} today</div>
+    <div class="wf" style="margin-top:auto"><span>P&amp;L ${pf.pnl >= 0 ? '+' : '−'}${nf(Math.abs(pf.pnl))} (${pct(pf.pnlPct)})</span><span>${pf.ps.length} holdings</span></div></button>`);
   cards.push(`<button class="wcard mine" data-go="markets"><div class="wt"><span>My watchlist</span><span>${w.length} stocks</span></div>
     <div class="wv">${upN} <span style="font-size:18px;font-weight:700">up</span> · ${w.length - upN} <span style="font-size:18px;font-weight:700">down</span></div>
     <div class="wc">${w.length ? 'Average ' + pct(w.reduce((s, c) => s + c.pct, 0) / w.length) + ' today' : 'Add stocks to track them'}</div>
@@ -347,6 +351,7 @@ function renderHome(){
   const ib = getInbox().slice(0, 3);
   $('#recent').innerHTML = ib.length ? ib.map(i => `<div><b>${esc(i.title)}</b><span>${esc(i.body)} · ${MP.ago(i.t)}</span></div>`).join('') : '<div class="empty">No alerts have fired yet.</div>';
   renderBadge();
+  if (MP.renderHomeEvents) MP.renderHomeEvents();
 }
 function dots(){
   const wl = $('#wallet'), n = wl.children.length; if (!n) return;
@@ -366,7 +371,25 @@ async function scanAll(){
 }
 $('#brief').addEventListener('click', () => MP.askAnalyst('Give me a morning brief for my focus markets: index moves, market mood, the top 3 breakout candidates in each market with what is driving them, notable news, how my watchlist and wishlist look, and what to watch today.'));
 MP.onHomeShow = force => { renderHome(); if (force) scanAll(); };
-MP.onQuotes = () => { if ($('#v-home').classList.contains('on')) renderHome(); if ($('#sub-wish').classList.contains('on')) renderWish(); };
+MP.onQuotes = () => { if ($('#v-home').classList.contains('on')) renderHome(); if ($('#sub-wish').classList.contains('on')) renderWish(); if ($('#sub-port').classList.contains('on') && MP.renderPortfolio) MP.renderPortfolio(); pushWidget(); };
+MP.onPortfolioChange = () => { if ($('#v-home').classList.contains('on')) renderHome(); };
+/* home-screen widget: first five watchlist stocks */
+function pushWidget(){
+  if (!(N() && N().setWidgetData)) return;
+  const rows = MP.getWatch().slice(0, 5).map(s => { const m = MP.quotes[s] && MP.quotes[s].meta, c = m && MP.change(m); return m ? {sym: s, s: short(s), p: nf(m.regularMarketPrice, dp(m.regularMarketPrice)), c: c ? c.pct : 0} : null; }).filter(Boolean);
+  if (rows.length) N().setWidgetData(JSON.stringify({t: Date.now(), rows}));
+}
+/* AI sentiment on the News tab */
+$('#ai-tone').addEventListener('click', async () => {
+  if (!store.get('mp.key', '')){ MP.toast('Add your Anthropic API key in Profile to use AI sentiment.'); MP.show('profile'); return; }
+  const items = MP.lastNews && MP.lastNews['#newslist']; if (!items || !items.length) return;
+  const b = $('#ai-tone'); b.disabled = true; b.textContent = 'Reading headlines…'; MP.setBusy(1);
+  try { const k = await MP.aiSentiment(items); MP.rerenderNews('#newslist'); MP.toast(k ? `AI scored ${k} headlines` : 'These headlines are already scored'); }
+  catch(e){ MP.toast('AI sentiment failed: ' + e.message); }
+  b.disabled = false; b.textContent = 'AI sentiment for these headlines'; MP.setBusy(-1);
+});
+$('#go-cal').addEventListener('click', () => { MP.show('news'); MP.showNewsSub('cal'); window.scrollTo(0, 0); });
+$('#refresh').addEventListener('click', () => { if ($('#v-news').classList.contains('on') && !$('#news-cal').hidden && MP.renderCalendar) MP.renderCalendar(true); });
 MP.onWatchChange = () => { if ($('#v-home').classList.contains('on')) renderHome(); };
 
 /* ---------- start ---------- */
