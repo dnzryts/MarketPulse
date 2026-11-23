@@ -2,7 +2,11 @@ name: Build APK
 
 on:
   push:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -23,11 +27,29 @@ jobs:
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
           chmod +x gradlew
           ./gradlew --no-daemon --stacktrace assembleRelease
-
-      - name: Rename
-        run: cp app/build/outputs/apk/release/app-release.apk MarketPulse.apk
+          cp app/build/outputs/apk/release/app-release.apk MarketPulse.apk
 
       - uses: actions/upload-artifact@v4
         with:
           name: MarketPulse-apk
           path: MarketPulse.apk
+
+      - name: Publish release (download on your phone from the Releases page)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release delete latest -y --cleanup-tag || true
+          gh release create latest MarketPulse.apk --title "MarketPulse (latest build)" \
+            --notes "Built from ${GITHUB_SHA::7}. Download MarketPulse.apk on your Android phone and open it to install."
+
+      - name: Push APK to the apk branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          mkdir /tmp/out && cp MarketPulse.apk /tmp/out/
+          git checkout --orphan apk
+          git rm -rf --quiet --cached .
+          cp /tmp/out/MarketPulse.apk .
+          git add -f MarketPulse.apk
+          git commit -q -m "APK from ${GITHUB_SHA::7}"
+          git push -f origin apk
