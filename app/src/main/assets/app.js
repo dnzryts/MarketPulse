@@ -332,12 +332,19 @@ fig.addEventListener('pointerup', endScrub); fig.addEventListener('pointerleave'
 $('#back').addEventListener('click', () => { current = null; show(prevView); });
 
 /* ---------- navigation ---------- */
-let newsLoaded = false;
+let newsLoaded = false, lastView = 'home';
+const ORDER = MP.ORDER = ['home', 'markets', 'radar', 'news', 'analyst'];
 function show(v){
-  document.querySelectorAll('.view').forEach(s => s.classList.toggle('on', s.id === 'v-' + v));
+  const a = ORDER.indexOf(lastView), b = ORDER.indexOf(v);
+  const dir = v === 'detail' || (lastView !== 'detail' && b < 0) ? 'from-right' : lastView === 'detail' || (a < 0 && b >= 0) ? 'from-left' : a !== b ? (b > a ? 'from-right' : 'from-left') : '';
+  document.querySelectorAll('.view').forEach(s => { const on = s.id === 'v-' + v; s.classList.toggle('on', on); if (!on) s.classList.remove('from-left', 'from-right'); });
+  const el = $('#v-' + v);
+  if (el && dir && lastView !== v){ el.classList.remove('from-left', 'from-right', 'done'); void el.offsetWidth; el.classList.add(dir); }
+  lastView = v;
   const tab = v === 'detail' ? prevView : v;
   document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
   if (v !== 'detail') prevView = v;
+  if (MP.onViewChange) MP.onViewChange(v, tab);
   if (v === 'home' && MP.onHomeShow) MP.onHomeShow();
   if (v === 'alerts' && MP.onAlertsShow) MP.onAlertsShow();
   if (v === 'profile' && MP.onProfileShow) MP.onProfileShow();
