@@ -51,7 +51,7 @@ function renderMe(){
   $('#p-sub').textContent = (p.markets.length ? p.markets : ['No markets']).join(' · ');
 }
 $('#s-name').addEventListener('change', () => { const p = MP.profile(); p.name = $('#s-name').value.trim(); store.set('mp.profile', p); renderMe(); renderHome(); });
-$('#s-mk').addEventListener('change', () => { const p = MP.profile(); p.markets = [...document.querySelectorAll('#s-mk input:checked')].map(i => i.value); store.set('mp.profile', p); renderMe(); renderHome(); });
+$('#s-mk').addEventListener('change', () => { const p = MP.profile(); p.markets = [...document.querySelectorAll('#s-mk input:checked')].map(i => i.value); store.set('mp.profile', p); renderMe(); renderHome(); if (MP.pushDigest) MP.pushDigest(); });
 $('#me').addEventListener('click', () => MP.show('profile'));
 
 /* ---------- lock & notifications ---------- */
@@ -84,6 +84,7 @@ MP.onProfileShow = () => {
   if (N() && N().lockAvailable && !N().lockAvailable()) $('#lock-note').textContent = 'Set up a fingerprint or screen lock on your phone to use this.';
   $('#s-notif').checked = notifAllowed() && store.get('mp.notif', true);
   $('#s-brk').checked = store.get('mp.brk', true);
+  $('#s-digest').checked = store.get('mp.digest', false);
   $('#s-key').value = store.get('mp.key', '');
   $('#s-model').value = store.get('mp.model', 'claude-sonnet-5-5');
   $('#s-web').checked = store.get('mp.web', true);
@@ -127,17 +128,20 @@ function pushInbox(title, body){
   else { const l = store.get('mp.inbox', []); l.unshift({t: Date.now(), title, body}); store.set('mp.inbox', l.slice(0, 50)); MP.toast(title); }
   renderBadge();
 }
-const TYPES = [['above', 'Price rises above'], ['below', 'Price falls below'], ['move', 'Moves more than (% in a day)']];
-const describe = a => a.type === 'move' ? `Moves ±${nf(a.value, 1)}% in a day` : (a.type === 'above' ? 'Above ' : a.src === 'wish' ? 'Buy target ' : 'Below ') + nf(a.value, dp(a.value));
+const TYPES = [['above', 'Price rises above'], ['below', 'Price falls below'], ['move', 'Moves more than (% in a day)'],
+  ['brk20', 'Breaks above its 20-day high'], ['rsi70', 'RSI crosses above 70 (overbought)'], ['rsi30', 'RSI crosses below 30 (oversold)'],
+  ['golden', 'Golden cross (50-day above 200-day)'], ['death', 'Death cross (50-day below 200-day)'], ['vol2', 'Volume spike (2× normal)']];
+const TECH = {brk20: '20-day breakout', rsi70: 'RSI crosses 70', rsi30: 'RSI crosses 30', golden: 'Golden cross', death: 'Death cross', vol2: 'Volume spike'};
+const describe = a => TECH[a.type] ? TECH[a.type] + ' · checked daily' : a.type === 'move' ? `Moves ±${nf(a.value, 1)}% in a day` : (a.type === 'above' ? 'Above ' : a.src === 'wish' ? 'Buy target ' : 'Below ') + nf(a.value, dp(a.value));
 async function newAlert(sym){
   const q = sym && MP.quotes[sym] && MP.quotes[sym].meta, p = q && q.regularMarketPrice;
   const v = await MP.modal({title: 'New price alert', ok: 'Create alert', fields: [
     {id: 'sym', label: 'Symbol', value: sym || '', placeholder: 'e.g. D05.SI, NVDA, RELIANCE.NS', upper: true},
     {id: 'type', label: 'Notify me when', type: 'select', value: 'above', options: TYPES},
-    {id: 'value', label: 'Price or %', type: 'number', value: p ? nf(p * 1.05, dp(p)).replace(/,/g, '') : '', hint: p ? 'Current price ' + nf(p, dp(p)) : 'For daily moves enter a percentage, e.g. 5'}]});
+    {id: 'value', label: 'Price or % (not needed for chart signals)', type: 'number', value: p ? nf(p * 1.05, dp(p)).replace(/,/g, '') : '', hint: (p ? 'Current price ' + nf(p, dp(p)) + '. ' : '') + 'For daily moves enter a percentage, e.g. 5. Chart-signal alerts fire at most once a day and stay on.'}]});
   if (!v) return;
-  const s = v.sym.toUpperCase(), val = num(v.value);
-  if (!s || val == null || val <= 0){ MP.toast('Enter a symbol and a positive number.'); return; }
+  const s = v.sym.toUpperCase(), val = TECH[v.type] ? 0 : num(v.value);
+  if (!s || val == null || (!TECH[v.type] && val <= 0)){ MP.toast('Enter a symbol and a positive number.'); return; }
   const a = getAlerts(); a.unshift({id: 'a' + Date.now(), sym: s, name: MP.displayName(s), type: v.type, value: val, active: true, src: 'manual', created: Date.now()});
   saveAlerts(a); renderAlerts(); MP.toast('Alert created for ' + short(s));
   ensureNotifications();
@@ -371,7 +375,7 @@ async function scanAll(){
 }
 $('#brief').addEventListener('click', () => MP.askAnalyst('Give me a morning brief for my focus markets: index moves, market mood, the top 3 breakout candidates in each market with what is driving them, notable news, how my watchlist and wishlist look, and what to watch today.'));
 MP.onHomeShow = force => { renderHome(); if (force) scanAll(); };
-MP.onQuotes = () => { if ($('#v-home').classList.contains('on')) renderHome(); if ($('#sub-wish').classList.contains('on')) renderWish(); if ($('#sub-port').classList.contains('on') && MP.renderPortfolio) MP.renderPortfolio(); pushWidget(); };
+MP.onQuotes = () => { if ($('#v-home').classList.contains('on')) renderHome(); if ($('#sub-wish').classList.contains('on')) renderWish(); if ($('#sub-port').classList.contains('on') && MP.renderPortfolio) MP.renderPortfolio(); pushWidget(); if (MP.pushDigest) MP.pushDigest(); };
 MP.onPortfolioChange = () => { if ($('#v-home').classList.contains('on')) renderHome(); };
 /* home-screen widget: first five watchlist stocks */
 function pushWidget(){
@@ -391,6 +395,51 @@ $('#ai-tone').addEventListener('click', async () => {
 $('#go-cal').addEventListener('click', () => { MP.show('news'); MP.showNewsSub('cal'); window.scrollTo(0, 0); });
 $('#refresh').addEventListener('click', () => { if ($('#v-news').classList.contains('on') && !$('#news-cal').hidden && MP.renderCalendar) MP.renderCalendar(true); });
 MP.onWatchChange = () => { if ($('#v-home').classList.contains('on')) renderHome(); };
+
+/* ---------- backup & restore ---------- */
+const BACKUP_SKIP = /^mp\.(key|scan\.|bt\.|ev$|aiTone|swipeTip|seen|brkSent)/;
+function backupJSON(){
+  const data = {};
+  for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k.startsWith('mp.') && !BACKUP_SKIP.test(k)) data[k] = localStorage.getItem(k); }
+  data['mp.watch'] = JSON.stringify(MP.getWatch()); data['mp.profile'] = JSON.stringify(MP.profile());
+  return JSON.stringify({app: 'MarketPulse', version: '3.1', exported: new Date().toISOString(), data, alerts: getAlerts()}, null, 1);
+}
+window.onExportDone = (ok, msg) => MP.toast(ok ? 'Backup saved. Keep it somewhere safe, like Google Drive.' : msg === 'cancelled' ? 'Backup cancelled' : 'Backup failed: ' + msg);
+$('#s-backup').addEventListener('click', () => {
+  const name = 'marketpulse-backup-' + new Date().toISOString().slice(0, 10) + '.json';
+  if (N() && N().exportData) N().exportData(name, backupJSON());
+  else { try { navigator.clipboard.writeText(backupJSON()); MP.toast('Backup copied to the clipboard'); } catch(e){ MP.toast('Backup works in the Android app.'); } }
+});
+window.onImportData = async (text, err) => {
+  if (!text){ if (err) MP.toast('Could not read the file: ' + err); return; }
+  let b; try { b = JSON.parse(text); } catch(e){ MP.toast('That file is not a MarketPulse backup.'); return; }
+  if (!b || b.app !== 'MarketPulse' || typeof b.data !== 'object'){ MP.toast('That file is not a MarketPulse backup.'); return; }
+  const w = JSON.parse(b.data['mp.watch'] || '[]'), p = JSON.parse(b.data['mp.port'] || '{"holdings":{}}');
+  const ok = await MP.modal({title: 'Restore this backup?', ok: 'Replace my data', fields: [{id: 'x', label: `From ${new Date(b.exported).toLocaleString()}: ${w.length} watchlist stocks, ${Object.keys(p.holdings || {}).length} holdings, ${(b.alerts || []).length} alerts. This replaces what is on this phone now (your API key is kept).`, type: 'select', value: 'yes', options: [['yes', 'Yes, replace']]}]});
+  if (!ok) return;
+  for (let i = localStorage.length - 1; i >= 0; i--){ const k = localStorage.key(i); if (k.startsWith('mp.') && k !== 'mp.key') localStorage.removeItem(k); }
+  for (const [k, v] of Object.entries(b.data)) if (k.startsWith('mp.') && k !== 'mp.key' && typeof v === 'string') localStorage.setItem(k, v);
+  saveAlerts(Array.isArray(b.alerts) ? b.alerts : []);
+  MP.toast('Restored. Reloading…'); setTimeout(() => location.reload(), 800);
+};
+$('#s-restore').addEventListener('click', () => { if (N() && N().importData) N().importData(); else MP.toast('Restore works in the Android app.'); });
+
+/* ---------- market-open digest ---------- */
+const mkOf = s => /\.SI$/.test(s) ? 'SGX' : /\.(NS|BO)$/.test(s) ? 'NSE' : 'NASDAQ';
+function pushDigest(){
+  if (!(N() && N().setDigest)) return;
+  const on = store.get('mp.digest', false), syms = {SGX: [], NSE: [], NASDAQ: []};
+  const mine = [...new Set((MP.portfolioSymbols ? MP.portfolioSymbols() : []).concat(MP.getWatch()))].filter(s => !s.startsWith('^') && !/=X$/.test(s));
+  for (const s of mine) syms[mkOf(s)].push(s);
+  const ev = [], c = store.get('mp.ev', {}), soon = Date.now() + 8 * 864e5;
+  for (const [s, v] of Object.entries(c)) for (const e of (v.ev || [])) if (e.t > Date.now() - 864e5 && e.t < soon) ev.push({s: short(s), m: mkOf(s), d: new Date(e.t).toLocaleDateString('en-CA', {timeZone: {SGX: 'Asia/Singapore', NSE: 'Asia/Kolkata', NASDAQ: 'America/New_York'}[mkOf(s)]}), k: e.kind === 'Earnings' ? 'results' : e.kind});
+  N().setDigest(JSON.stringify({on, markets: MP.profile().markets, syms, events: ev}));
+}
+MP.pushDigest = pushDigest;
+$('#s-digest').addEventListener('change', e => {
+  store.set('mp.digest', e.target.checked); pushDigest();
+  if (e.target.checked){ ensureNotifications(); MP.toast('You\'ll get a short summary soon after each of your markets opens.'); }
+});
 
 /* ---------- start ---------- */
 const resume = window.onAppResume;

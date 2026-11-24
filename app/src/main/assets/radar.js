@@ -76,6 +76,7 @@ function applyNews(r){
 }
 const label = s => s >= 70 ? 'Breakout watch' : s >= 50 ? 'Building' : s >= 30 ? 'Neutral' : 'Weak';
 MP.label = label;
+MP.indicators = indicators; MP.techScore = techScore;
 
 /* Benchmark index for a symbol, and its returns (for relative strength). */
 const indexOf = sym => /\.SI$/.test(sym) ? '^STI' : /\.(NS|BO)$/.test(sym) ? '^NSEI' : '^IXIC';
@@ -87,6 +88,7 @@ async function indexReturns(idx){
   const r = {ret20: n > 20 ? (cl[n - 1] / cl[n - 21] - 1) * 100 : null, ret60: n > 60 ? (cl[n - 1] / cl[n - 61] - 1) * 100 : null};
   idxCache[idx] = {at: Date.now(), r}; return r;
 }
+MP.withRS = (x, ir) => withRS(x, ir);
 function withRS(x, ir){ if (ir && ir.ret20 != null && x.ret20 != null) x.rs20 = x.ret20 - ir.ret20; if (ir && ir.ret60 != null && x.ret60 != null) x.rs60 = x.ret60 - ir.ret60; return x; }
 
 /* Full analysis of one symbol (used by detail view and the AI analyst). */
@@ -153,11 +155,12 @@ function renderHeat(){
     secs.map(g => `<div class="heat-sec"><div class="heat-h"><b>${esc(g.s)}</b><span class="${g.avg >= 0 ? 'up-t' : 'down-t'}">${pct(g.avg)} today</span><span class="nm">1M vs index ${pct(g.rs20)}</span></div>
       <div class="heat-grid">${g.rs.map(r => `<button class="tile" data-open="${esc(r.symbol)}" style="background:${heatColor(r.chg1d)}"><b>${esc(r.symbol.replace(/\.(SI|NS)$/, ''))}</b><span>${pct(r.chg1d)}</span></button>`).join('')}</div></div>`).join('');
 }
-function renderModes(){ document.querySelectorAll('#rmode button').forEach(b => b.classList.toggle('on', b.dataset.v === mode)); $('#rfilt').hidden = mode === 'heat'; }
+function renderModes(){ document.querySelectorAll('#rmode button').forEach(b => b.classList.toggle('on', b.dataset.v === mode)); $('#rfilt').hidden = mode !== 'list'; }
 $('#rmode').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (!b) return; mode = b.dataset.v; MP.store.set('mp.radarMode', mode); renderModes(); renderRadar(); });
 function renderRadar(){
   const el = $('#radar');
   renderModes();
+  if (mode === 'bt'){ $('#radar-h').textContent = U[market].label + ' score backtest'; $('#radar-t').textContent = ''; if (MP.renderBacktest) MP.renderBacktest(market, el); return; }
   if (result && mode === 'heat'){ $('#radar-h').textContent = U[market].label + ' sector heatmap'; $('#radar-t').textContent = 'Scanned ' + new Date(result.at).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'}); renderHeat(); return; }
   $('#radar-h').textContent = U[market].label + ' breakout radar';
   if (!result){ el.innerHTML = '<div class="empty">Tap <b>Scan now</b> to rank about ' + U[market].list.length + ' large ' + esc(U[market].label) + ' stocks by breakout signals and news buzz.</div>'; $('#radar-t').textContent = ''; return; }

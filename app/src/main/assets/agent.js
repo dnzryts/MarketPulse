@@ -15,6 +15,8 @@ const TOOLS = [
     input_schema: {type: 'object', properties: {query: {type: 'string'}}, required: ['query']}},
   {name: 'get_user_lists', description: "The user's watchlist, wishlist (stocks they want to buy, with target prices), active price alerts and portfolio (holdings, average cost, P&L in their base currency).",
     input_schema: {type: 'object', properties: {}}},
+  {name: 'backtest_score', description: 'Historical test of the breakout score for a market (about 2 years, technical part only): for score buckets 70+, 50-69, 30-49, under 30, the average return vs the index and how often stocks beat the index over 5, 10 and 20 trading days. Use it to say how much to trust the score.',
+    input_schema: {type: 'object', properties: {market: {type: 'string', enum: ['SGX', 'NASDAQ', 'NSE']}}, required: ['market']}},
   {name: 'get_events', description: 'Upcoming earnings (results) dates, ex-dividend and dividend payment dates for the user\'s stocks, or for given symbols, plus dividend yield and P/E.',
     input_schema: {type: 'object', properties: {symbols: {type: 'array', items: {type: 'string'}, description: 'Optional Yahoo symbols; default = the user\'s stocks'}, days: {type: 'integer', description: 'Look-ahead window, default 60'}}}}
 ];
@@ -50,6 +52,7 @@ const RUN = {
   },
   async find_symbol({query}, step){ step('Looking up ' + query); return await MP.searchSymbols(query); },
   async get_user_lists(){ return {watchlist: MP.getWatch(), wishlist: MP.getWish ? MP.getWish() : [], alerts: MP.getAlerts ? MP.getAlerts() : [], portfolio: MP.portfolioSummary ? MP.portfolioSummary() : null}; },
+  async backtest_score({market}, step){ step('Backtesting the score on ' + market + ' (about a minute)…'); const r = await MP.backtest(market); const rd = x => x == null ? null : Math.round(x * 10) / 10; return {...r, buckets: r.buckets.map(b => ({bucket: b.bucket, horizons: b.horizons.map(h => ({days: h.days, n: h.n, avg_return_pct: rd(h.avg_return_pct), avg_vs_index_pct: rd(h.avg_vs_index_pct), beat_index_pct: rd(h.beat_index_pct)}))})), all: r.all.map(h => ({days: h.days, n: h.n, avg_vs_index_pct: rd(h.avg_vs_index_pct), beat_index_pct: rd(h.beat_index_pct)}))}; },
   async get_events({symbols, days = 60}, step){
     step('Checking results and dividend dates…');
     if (!symbols || !symbols.length) return await MP.upcomingEvents(days);

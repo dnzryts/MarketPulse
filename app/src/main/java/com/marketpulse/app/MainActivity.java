@@ -64,6 +64,8 @@ public class MainActivity extends Activity {
     };
     private static final int REQ_CREDENTIAL = 11;
     private static final int REQ_NOTIFY = 12;
+    private static final int REQ_EXPORT = 13;
+    private static final int REQ_IMPORT = 14;
     private static final long RELOCK_AFTER_MS = 30_000;
 
     private WebView web;
@@ -75,6 +77,8 @@ public class MainActivity extends Activity {
 
     private boolean authInProgress = false, pageReady = false, pendingOpenAlerts = false;
     private volatile String yahooCrumb = null;
+    private String pendingExport = null;
+    private boolean pickerOpen = false;
     private long backgroundAt = 0;
     private Runnable authOk, authFail;
 
@@ -119,7 +123,7 @@ public class MainActivity extends Activity {
 
         pendingOpenAlerts = getIntent() != null && getIntent().getBooleanExtra("openAlerts", false);
         if (lockOn()) lockNow(); else lockView.setVisibility(View.GONE);
-        if (prefs.getString("alerts", "[]").length() > 2) AlertJobService.schedule(this, true);
+        AlertJobService.reschedule(this);
     }
 
     @Override
@@ -254,12 +258,48 @@ public class MainActivity extends Activity {
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQ_CREDENTIAL) authDone(resultCode == RESULT_OK);
+        if (requestCode == REQ_EXPORT || requestCode == REQ_IMPORT) {
+            pickerOpen = false;
+            final Uri uri = data != null ? data.getData() : null;
+            if (resultCode != RESULT_OK || uri == null) {
+                pendingExport = null;
+                js(requestCode == REQ_EXPORT ? "window.onExportDone && window.onExportDone(false, 'cancelled')" : "window.onImportData && window.onImportData(null)");
+                return;
+            }
+            if (requestCode == REQ_EXPORT) {
+                final String text = pendingExport;
+                pendingExport = null;
+                pool.execute(() -> {
+                    try (OutputStream os = getContentResolver().openOutputStream(uri, "wt")) {
+                        os.write(text.getBytes(StandardCharsets.UTF_8));
+                        js("window.onExportDone && window.onExportDone(true)");
+                    } catch (Exception e) {
+                        js("window.onExportDone && window.onExportDone(false, " + JSONObject.quote(String.valueOf(e.getMessage())) + ")");
+                    }
+                });
+            } else {
+                pool.execute(() -> {
+                    try (InputStream in = getContentResolver().openInputStream(uri)) {
+                        ByteArrayOutputStream out = new ByteArrayOutputStream();
+                        byte[] buf = new byte[16384];
+                        int n;
+                        while ((n = in.read(buf)) > 0) {
+                            out.write(buf, 0, n);
+                            if (out.size() > 8 * 1024 * 1024) throw new Exception("File too large");
+                        }
+                        js("window.onImportData && window.onImportData(" + JSONObject.quote(out.toString("UTF-8")) + ")");
+                    } catch (Exception e) {
+                        js("window.onImportData && window.onImportData(null, " + JSONObject.quote(String.valueOf(e.getMessage())) + ")");
+                    }
+                });
+            }
+        }
     }
 
     @Override
     protected void onStop() {
         super.onStop();
-        if (!authInProgress) backgroundAt = System.currentTimeMillis();
+        if (!authInProgress && !pickerOpen) backgroundAt = System.currentTimeMillis();
     }
 
     @Override
@@ -443,6 +483,33 @@ public class MainActivity extends Activity {
             pool.execute(() -> doRequest(id, method, url, headersJson, body));
         }
 
+        /* backup & restore through the Android file picker */
+        @JavascriptInterface
+        public void exportData(final String filename, final String json) {
+            main.post(() -> {
+                pendingExport = json;
+                pickerOpen = true;
+                Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE)
+                        .setType("application/json").putExtra(Intent.EXTRA_TITLE, filename);
+                try { startActivityForResult(i, REQ_EXPORT); } catch (Exception e) { pickerOpen = false; js("window.onExportDone && window.onExportDone(false, 'No file picker on this phone')"); }
+            });
+        }
+
+        @JavascriptInterface
+        public void importData() {
+            main.post(() -> {
+                pickerOpen = true;
+                Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT).addCategory(Intent.CATEGORY_OPENABLE).setType("*/*");
+                try { startActivityForResult(i, REQ_IMPORT); } catch (Exception e) { pickerOpen = false; js("window.onImportData && window.onImportData(null, 'No file picker on this phone')"); }
+            });
+        }
+
+        @JavascriptInterface
+        public void setDigest(String json) {
+            prefs.edit().putString("digest", json == null ? "{}" : json).apply();
+            AlertJobService.reschedule(MainActivity.this);
+        }
+
         @JavascriptInterface
         public void yahooSummary(final String id, final String sym, final String modules) {
             pool.execute(() -> quoteSummary(id, sym, modules));
@@ -498,7 +565,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void saveAlerts(String json) {
             prefs.edit().putString("alerts", json == null ? "[]" : json).apply();
-            AlertJobService.schedule(MainActivity.this, (json != null && json.contains("\"active\":true")) || MarketWidget.exists(MainActivity.this));
+            AlertJobService.reschedule(MainActivity.this);
         }
 
         @JavascriptInterface

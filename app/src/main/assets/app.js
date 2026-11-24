@@ -23,7 +23,39 @@ window.__nativeResolve = (id, ok, status, body) => {
   if (ok) p.res(body);
   else { const e = new Error(status ? 'HTTP ' + status : body || 'Network error'); e.status = status; e.body = body; p.rej(e); }
 };
-function http(url, opt = {}){
+/* ---------- offline cache: last good copy of quotes, history and news (IndexedDB) ---------- */
+let idb = null;
+function db(){
+  if (idb) return idb;
+  idb = new Promise(res => { try { const r = indexedDB.open('marketpulse', 1); r.onupgradeneeded = () => r.result.createObjectStore('http'); r.onsuccess = () => res(r.result); r.onerror = () => res(null); } catch(e){ res(null); } });
+  return idb;
+}
+async function cachePut(k, text){ const d = await db(); if (!d) return; try { d.transaction('http', 'readwrite').objectStore('http').put({text, t: Date.now()}, k); } catch(e){} }
+async function cacheGet(k){ const d = await db(); if (!d) return null; return new Promise(res => { try { const r = d.transaction('http').objectStore('http').get(k); r.onsuccess = () => res(r.result || null); r.onerror = () => res(null); } catch(e){ res(null); } }); }
+const cacheable = u => /finance\/chart\/|news\.google\.com/.test(u);
+let offlineSince = null;
+function markOffline(t){
+  const el = $('#offline'); if (!el) return;
+  offlineSince = Math.min(offlineSince || t, t);
+  el.textContent = 'Offline · showing saved data from ' + new Date(offlineSince).toLocaleString([], {weekday: 'short', hour: '2-digit', minute: '2-digit'});
+  el.hidden = false;
+}
+function markOnline(){ if (offlineSince === null) return; offlineSince = null; const el = $('#offline'); if (el) el.hidden = true; }
+MP.isOffline = () => offlineSince !== null;
+MP.cache = {put: cachePut, get: cacheGet, offline: markOffline, online: markOnline};
+window.addEventListener('offline', () => markOffline(Date.now()));
+async function http(url, opt = {}){
+  const get = !opt.method || opt.method === 'GET', c = get && cacheable(url);
+  try {
+    const t = await rawHttp(url, opt);
+    if (c){ cachePut(url, t); markOnline(); }
+    return t;
+  } catch(e){
+    if (c && !e.status){ const hit = await cacheGet(url); if (hit){ markOffline(hit.t); return hit.text; } }
+    throw e;
+  }
+}
+function rawHttp(url, opt = {}){
   const method = opt.method || 'GET', timeout = opt.timeout || 30000;
   if (window.Native && Native.request){
     return new Promise((res, rej) => {
@@ -38,7 +70,12 @@ function http(url, opt = {}){
 }
 MP.http = http;
 /* Yahoo quoteSummary (earnings dates, dividends, valuation) goes through the app, which handles Yahoo's session cookie. */
-MP.summary = (sym, modules) => {
+MP.summary = async (sym, modules) => {
+  const k = 'summary:' + sym + ':' + modules;
+  try { const j = await rawSummary(sym, modules); cachePut(k, JSON.stringify(j)); return j; }
+  catch(e){ const hit = await cacheGet(k); if (hit){ markOffline(hit.t); return JSON.parse(hit.text); } throw e; }
+};
+const rawSummary = (sym, modules) => {
   if (window.Native && Native.yahooSummary) return new Promise((res, rej) => {
     const id = 'r' + (++seq); pending[id] = {res: t => { try { res(JSON.parse(t)); } catch(e){ rej(e); } }, rej};
     Native.yahooSummary(id, sym, modules);

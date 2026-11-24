@@ -48,6 +48,11 @@ public class MarketWidget extends AppWidgetProvider {
         AlertJobService.schedule(ctx, true);
     }
 
+    @Override
+    public void onDisabled(Context ctx) {
+        AlertJobService.reschedule(ctx);
+    }
+
     static boolean exists(Context ctx) {
         AppWidgetManager mgr = AppWidgetManager.getInstance(ctx);
         return mgr != null && mgr.getAppWidgetIds(new ComponentName(ctx, MarketWidget.class)).length > 0;

@@ -2,6 +2,13 @@
 
 An Android app (Android 8.0+) that tracks, scans and explains the market. It shows which stocks are breaking out, which are in the news, and what an AI analyst makes of them.
 
+## New in v3.1
+- **Score backtest** (Radar → Backtest): replays ~2 years of prices to show whether high breakout scores beat the index over 5, 10 and 20 days, per market.
+- **Backup & restore** (Profile → Data): save everything to a file and load it on any phone. The API key is not included.
+- **Offline mode**: the last quotes, charts and news are kept on the phone and shown with an "Offline" banner when there's no connection.
+- **Chart-signal alerts**: 20-day breakout, RSI crossing 70/30, golden and death cross, volume spikes, checked in the background.
+- **Market-open digest**: one notification after SGX, NSE or NASDAQ opens, with the index move, your biggest movers and today's results or dividends.
+
 ## New in v3
 - **Candlestick charts** with volume bars and 20/50-day moving averages (Line/Candles toggle on any stock page).
 - **Sector heatmap** on Radar and **relative strength vs the index** (STI, Nasdaq, Nifty 50) built into the breakout score.

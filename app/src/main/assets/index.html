@@ -274,6 +274,12 @@ button:active{transform:scale(.98)}
 details.card summary{cursor:pointer;min-height:32px;display:flex;align-items:center}
 .wcard.port{background:linear-gradient(135deg,#6b3fd1,#2a1559)}
 [hidden]{display:none!important}
+.offline{position:sticky;top:calc(env(safe-area-inset-top) + 65px);z-index:4;background:#e8a317;color:#16191c;font-size:13.5px;font-weight:700;text-align:center;padding:6px 12px}
+table.bt{border-collapse:collapse;width:100%;font-size:13.5px;background:var(--panel);border-radius:14px;overflow:hidden;margin:4px 0}
+table.bt th,table.bt td{padding:8px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+table.bt th:first-child,table.bt td:first-child{text-align:left}
+table.bt th{font-size:12.5px;color:var(--mute);font-weight:700}
+table.bt tr.tot td{background:var(--chip)}
 </style>
 </head>
 <body>
@@ -285,6 +291,7 @@ details.card summary{cursor:pointer;min-height:32px;display:flex;align-items:cen
   <button class="avatar" id="me" aria-label="Profile">?</button>
 </header>
 
+<div id="offline" class="offline" hidden></div>
 <main>
   <section class="view on" id="v-home">
     <div class="hello"><h2 id="hello">Good day</h2><p id="today"></p></div>
@@ -357,7 +364,7 @@ details.card summary{cursor:pointer;min-height:32px;display:flex;align-items:cen
   <section class="view" id="v-radar">
     <div class="seg" id="mkts"></div>
     <div class="ctrl"><button class="btn" id="scan">Scan now</button><button class="btn alt" id="radar-ai">AI review</button></div>
-    <div class="seg small" id="rmode" style="margin:4px 0 8px"><button data-v="list" class="on">Ranked list</button><button data-v="heat">Sector heatmap</button></div>
+    <div class="seg small" id="rmode" style="margin:4px 0 8px"><button data-v="list" class="on">Ranked</button><button data-v="heat">Heatmap</button><button data-v="bt">Backtest</button></div>
     <div class="prog" id="prog" hidden><i></i></div>
     <div class="bar"><h2 id="radar-h">Breakout radar</h2><span class="upd" id="radar-t"></span></div>
     <div class="chips" id="rfilt"></div>
@@ -402,7 +409,7 @@ details.card summary{cursor:pointer;min-height:32px;display:flex;align-items:cen
     <div class="bar"><h2>Price alerts</h2><button class="txtbtn" id="al-add">+ New alert</button></div>
     <div id="notif-warn"></div>
     <div class="list" id="alerts"></div>
-    <p class="note">Checked about every 15 minutes in the background, even when the app is closed (Android sets the timing). Price alerts switch off after they fire; daily-move alerts fire at most once a day.</p>
+    <p class="note">Checked about every 15 minutes in the background, even when the app is closed (Android sets the timing). Price alerts switch off after they fire. Daily-move and chart-signal alerts (breakouts, RSI, golden/death cross, volume spikes) stay on and fire at most once a day.</p>
     <div class="bar"><h2>Notifications</h2><button class="txtbtn" id="inbox-clear">Clear</button></div>
     <div class="list inbox" id="inbox"></div>
   </section>
@@ -423,6 +430,7 @@ details.card summary{cursor:pointer;min-height:32px;display:flex;align-items:cen
     <div class="group"><h3>Notifications</h3>
       <div class="item"><span>Alert notifications<small id="notif-note">Price targets, big moves and wishlist buy levels.</small></span><label class="switch"><input type="checkbox" id="s-notif"><i></i></label></div>
       <div class="item"><span>Home-screen widget<small>Long-press your home screen, tap Widgets, then drag MarketPulse onto it. Shows your first five watchlist stocks.</small></span></div>
+      <div class="item"><span>Market-open digest<small>One short notification after each of your markets opens: the index, your biggest movers and today's results or dividends.</small></span><label class="switch"><input type="checkbox" id="s-digest"><i></i></label></div>
       <div class="item"><span>Breakout alerts<small>Notify when a watchlist or wishlist stock scores 70+ on the radar (checked while the app is open).</small></span><label class="switch"><input type="checkbox" id="s-brk"><i></i></label></div>
     </div>
     <div class="group"><h3>AI analyst</h3>
@@ -435,6 +443,8 @@ details.card summary{cursor:pointer;min-height:32px;display:flex;align-items:cen
       <div class="item"><span>Conversation</span><button class="txtbtn" id="s-clear">Clear chat</button></div>
     </div>
     <div class="group"><h3>Data</h3>
+      <div class="item"><span>Back up<small>Save your lists, portfolio, alerts and settings to a file (your API key is not included).</small></span><button class="txtbtn" id="s-backup">Back up</button></div>
+      <div class="item"><span>Restore<small>Load a backup file, for example on a new phone.</small></span><button class="txtbtn" id="s-restore">Restore</button></div>
       <div class="item"><span>Watchlist</span><button class="txtbtn" id="s-reset">Reset to default</button></div>
       <div class="item"><span>Analysed history</span><button class="txtbtn" id="s-hist">Clear</button></div>
     </div>
@@ -466,6 +476,7 @@ details.card summary{cursor:pointer;min-height:32px;display:flex;align-items:cen
 <script src="agent.js"></script>
 <script src="portfolio.js"></script>
 <script src="events.js"></script>
+<script src="backtest.js"></script>
 <script src="features.js"></script>
 <script src="gestures.js"></script>
 </body>
