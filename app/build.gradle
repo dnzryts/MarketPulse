@@ -45,13 +45,28 @@ android {
 }
 
 // Ship the repo's CHANGELOG.md inside the app (Profile -> What's new).
-// Single source: edit only /CHANGELOG.md; the build copies it into the assets.
-def changelogDir = layout.buildDirectory.dir("generated/changelog")
-def copyChangelog = tasks.register("copyChangelog", Copy) {
-    from rootProject.file("CHANGELOG.md")
-    into changelogDir
+// Single source: edit only /CHANGELOG.md; the build copies it into each variant's assets.
+abstract class CopyChangelogTask extends DefaultTask {
+    @InputFile
+    abstract RegularFileProperty getSource()
+
+    @OutputDirectory
+    abstract DirectoryProperty getOutputDir()
+
+    @TaskAction
+    void copy() {
+        def out = outputDir.get().asFile
+        out.mkdirs()
+        new File(out, "CHANGELOG.md").text = source.get().asFile.getText("UTF-8")
+    }
 }
-android.sourceSets.main.assets.srcDir(changelogDir)
-android.applicationVariants.all { variant ->
-    variant.mergeAssetsProvider.configure { dependsOn copyChangelog }
+
+def copyChangelog = tasks.register("copyChangelog", CopyChangelogTask) {
+    source.set(rootProject.layout.projectDirectory.file("CHANGELOG.md"))
+}
+
+androidComponents {
+    onVariants(selector().all()) { variant ->
+        variant.sources.assets?.addGeneratedSourceDirectory(copyChangelog, CopyChangelogTask::getOutputDir)
+    }
 }
