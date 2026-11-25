@@ -504,6 +504,39 @@ public class MainActivity extends Activity {
             });
         }
 
+        /* version + bundled text files (the changelog) */
+        @JavascriptInterface
+        @SuppressWarnings("deprecation")
+        public String appVersion() {
+            try {
+                android.content.pm.PackageInfo pi = getPackageManager().getPackageInfo(getPackageName(), 0);
+                long code = Build.VERSION.SDK_INT >= 28 ? pi.getLongVersionCode() : pi.versionCode;
+                JSONObject o = new JSONObject();
+                o.put("name", pi.versionName);
+                o.put("code", code);
+                o.put("updated", pi.lastUpdateTime);
+                o.put("installed", pi.firstInstallTime);
+                o.put("android", Build.VERSION.RELEASE);
+                return o.toString();
+            } catch (Exception e) {
+                return "{}";
+            }
+        }
+
+        @JavascriptInterface
+        public String readAsset(String name) {
+            if (!"CHANGELOG.md".equals(name)) return null;
+            try (InputStream in = getAssets().open(name)) {
+                ByteArrayOutputStream out = new ByteArrayOutputStream();
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+                return out.toString("UTF-8");
+            } catch (Exception e) {
+                return null;
+            }
+        }
+
         @JavascriptInterface
         public void setDigest(String json) {
             prefs.edit().putString("digest", json == null ? "{}" : json).apply();

@@ -47,7 +47,7 @@ nav button.on{color:var(--ink);font-weight:700}
 .sugg b{min-width:76px}.sugg span{color:var(--mute);font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1}.sugg em{font-style:normal;font-size:13px;color:var(--mute)}
 .bar{display:flex;align-items:center;justify-content:space-between;margin:4px 0 8px;gap:8px}
 .bar h2{font-size:15px;margin:0;color:var(--mute);font-weight:600}
-.txtbtn{min-height:44px;padding:0 6px;color:var(--accent);font-weight:700;font-size:15px}
+.txtbtn{white-space:nowrap;min-height:44px;padding:0 6px;color:var(--accent);font-weight:700;font-size:15px}
 .list{background:var(--panel);border-radius:14px;overflow:hidden;border:1px solid var(--line)}
 .row{display:grid;grid-template-columns:minmax(0,1fr) 72px auto;gap:12px;align-items:center;padding:12px 14px;border-bottom:1px solid var(--line);width:100%;text-align:left;min-height:64px}
 .row:last-child{border-bottom:0}
@@ -280,6 +280,11 @@ table.bt th,table.bt td{padding:8px 8px;border-bottom:1px solid var(--line);text
 table.bt th:first-child,table.bt td:first-child{text-align:left}
 table.bt th{font-size:12.5px;color:var(--mute);font-weight:700}
 table.bt tr.tot td{background:var(--chip)}
+.rel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;margin-bottom:12px}
+.rel.cur{border-color:var(--up);border-width:2px}
+.rel-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.rel-h b{font-size:17px}.rel-h .nm{margin-left:auto}
+.rel-g{margin-top:10px}.rel-g ul{margin:6px 0 0;padding-left:20px}.rel-g li{margin:3px 0;font-size:15px}
+.rel code{font-size:13px;background:var(--chip);padding:1px 4px;border-radius:4px}
 </style>
 </head>
 <body>
@@ -448,7 +453,16 @@ table.bt tr.tot td{background:var(--chip)}
       <div class="item"><span>Watchlist</span><button class="txtbtn" id="s-reset">Reset to default</button></div>
       <div class="item"><span>Analysed history</span><button class="txtbtn" id="s-hist">Clear</button></div>
     </div>
+    <div class="group"><h3>About</h3>
+      <div class="item"><span>Version<small id="ab-date"></small></span><b id="ab-ver" style="white-space:nowrap">–</b></div>
+      <div class="item"><span>What's new<small id="ab-news"></small></span><button class="txtbtn" id="ab-open">Open</button></div>
+    </div>
     <p class="note">Your key, lists and settings stay on this phone. Quotes: Yahoo Finance. News: Google News. AI: Anthropic Claude. Research only, not financial advice.</p>
+  </section>
+  <section class="view" id="v-whatsnew">
+    <button class="back" id="wn-back"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="m15 5-7 7 7 7"/></svg>Profile</button>
+    <div class="dhead"><h2>What's new</h2><div class="t" id="wn-ver"></div></div>
+    <div id="wn-list" class="stagger"></div>
   </section>
 </main>
 
@@ -479,5 +493,6 @@ table.bt tr.tot td{background:var(--chip)}
 <script src="backtest.js"></script>
 <script src="features.js"></script>
 <script src="gestures.js"></script>
+<script src="about.js"></script>
 </body>
 </html>

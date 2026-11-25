@@ -10,8 +10,8 @@ android {
         applicationId "com.marketpulse.app"
         minSdk 26
         targetSdk 35
-        versionCode 4
-        versionName "3.1"
+        versionCode 5
+        versionName "3.2"
     }
 
     // One permanent key (signing/release.jks, kept in this private repo) so each
@@ -42,4 +42,16 @@ android {
         sourceCompatibility JavaVersion.VERSION_1_8
         targetCompatibility JavaVersion.VERSION_1_8
     }
+}
+
+// Ship the repo's CHANGELOG.md inside the app (Profile -> What's new).
+// Single source: edit only /CHANGELOG.md; the build copies it into the assets.
+def changelogDir = layout.buildDirectory.dir("generated/changelog")
+def copyChangelog = tasks.register("copyChangelog", Copy) {
+    from rootProject.file("CHANGELOG.md")
+    into changelogDir
+}
+android.sourceSets.main.assets.srcDir(changelogDir)
+android.applicationVariants.all { variant ->
+    variant.mergeAssetsProvider.configure { dependsOn copyChangelog }
 }

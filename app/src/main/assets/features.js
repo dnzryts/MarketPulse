@@ -10,10 +10,10 @@ const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ---------- toast & modal ---------- */
 let toastT;
-MP.toast = (msg, undo) => {
+MP.toast = (msg, action, label = 'Undo') => {
   const t = $('#toast'); $('#toast-t').textContent = msg;
-  const b = $('#toast-b'); b.hidden = !undo; b.onclick = () => { t.hidden = true; undo && undo(); };
-  t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, undo ? 5000 : 3000);
+  const b = $('#toast-b'); b.hidden = !action; b.textContent = label; b.onclick = () => { t.hidden = true; action && action(); };
+  t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, action ? 6000 : 3000);
 };
 MP.modal = ({title, fields, ok = 'Save'}) => new Promise(res => {
   $('#m-title').textContent = title; $('#m-ok').textContent = ok;
@@ -402,7 +402,7 @@ function backupJSON(){
   const data = {};
   for (let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if (k.startsWith('mp.') && !BACKUP_SKIP.test(k)) data[k] = localStorage.getItem(k); }
   data['mp.watch'] = JSON.stringify(MP.getWatch()); data['mp.profile'] = JSON.stringify(MP.profile());
-  return JSON.stringify({app: 'MarketPulse', version: '3.1', exported: new Date().toISOString(), data, alerts: getAlerts()}, null, 1);
+  return JSON.stringify({app: 'MarketPulse', version: MP.version ? MP.version().name : '', exported: new Date().toISOString(), data, alerts: getAlerts()}, null, 1);
 }
 window.onExportDone = (ok, msg) => MP.toast(ok ? 'Backup saved. Keep it somewhere safe, like Google Drive.' : msg === 'cancelled' ? 'Backup cancelled' : 'Backup failed: ' + msg);
 $('#s-backup').addEventListener('click', () => {

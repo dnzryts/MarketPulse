@@ -21,6 +21,15 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      - name: Check the changelog covers this version
+        run: |
+          V=$(sed -n 's/.*versionName "\(.*\)".*/\1/p' app/build.gradle)
+          echo "versionName: $V"
+          grep -q "^## \[$V\]" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## [$V]' section. Add release notes before building."; exit 1; }
+          awk -v v="$V" '$0 ~ "^## \\[" v "\\]" {f=1; next} /^## \[/ {f=0} f' CHANGELOG.md > release-notes.md
+          echo "VERSION=$V" >> "$GITHUB_ENV"
+          cat release-notes.md
+
       - name: Build
         run: |
           echo "Android SDK: $ANDROID_HOME"
@@ -38,9 +47,12 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          cp MarketPulse.apk "MarketPulse-v$VERSION.apk"
+          { echo "Download **MarketPulse-v$VERSION.apk** on your Android phone and open it to install. Built from ${GITHUB_SHA::7}."; echo; cat release-notes.md; } > notes.md
           gh release delete latest -y --cleanup-tag || true
-          gh release create latest MarketPulse.apk --title "MarketPulse (latest build)" \
-            --notes "Built from ${GITHUB_SHA::7}. Download MarketPulse.apk on your Android phone and open it to install."
+          gh release create latest "MarketPulse-v$VERSION.apk" --title "MarketPulse $VERSION (latest)" --notes-file notes.md
+          gh release delete "v$VERSION" -y --cleanup-tag || true
+          gh release create "v$VERSION" "MarketPulse-v$VERSION.apk" --title "MarketPulse $VERSION" --notes-file notes.md
 
       - name: Push APK to the apk branch
         run: |

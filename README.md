@@ -2,6 +2,11 @@
 
 An Android app (Android 8.0+) that tracks, scans and explains the market. It shows which stocks are breaking out, which are in the news, and what an AI analyst makes of them.
 
+## Versions and changelog
+- The installed version shows in the app under **Profile → About**, and **What's new** lists every release.
+- `CHANGELOG.md` is the single source. For each release: bump `versionCode` and `versionName` in `app/build.gradle`, and add a `## [version] - YYYY-MM-DD` section at the top of the changelog with `### Added` / `### Changed` / `### Fixed` lists.
+- The build copies the changelog into the app and **fails if the changelog has no section for the current versionName**. GitHub Releases get a `vX.Y` release plus `latest`, with the changelog section as release notes.
+
 ## New in v3.1
 - **Score backtest** (Radar → Backtest): replays ~2 years of prices to show whether high breakout scores beat the index over 5, 10 and 20 days, per market.
 - **Backup & restore** (Profile → Data): save everything to a file and load it on any phone. The API key is not included.
